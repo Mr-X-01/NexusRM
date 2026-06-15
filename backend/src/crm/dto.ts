@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { ClientStatus, DealStage, Role, TaskPriority, TaskStatus } from "@prisma/client";
-import { IsArray, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, IsUrl, Max, Min, MinLength } from "class-validator";
+import { ClientStatus, DealStage, Role, TaskPriority, TaskStatus, UserStatus } from "@prisma/client";
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, IsUrl, Max, Min, MinLength } from "class-validator";
 
 export class RegisterDto {
   @ApiProperty({ example: "admin@nexusrm.ai" })
@@ -174,4 +174,80 @@ export class AiChatDto {
   @IsString()
   @MinLength(2)
   message: string;
+}
+
+export class UpdateUserDto {
+  @ApiPropertyOptional({ example: "Мария Чен" })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ enum: Role })
+  @IsOptional()
+  @IsEnum(Role)
+  role?: Role;
+
+  @ApiPropertyOptional({ enum: UserStatus })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
+
+  @ApiPropertyOptional({ example: "Руководитель продаж" })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({ example: "Коммерческий отдел" })
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @ApiPropertyOptional({ example: "+7 999 000-00-00" })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}
+
+export class WorkspaceSettingsDto {
+  @ApiPropertyOptional({ example: "NexusRM" })
+  @IsOptional()
+  @IsString()
+  workspaceName?: string;
+
+  @ApiPropertyOptional({ example: "Europe/Moscow" })
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @ApiPropertyOptional({ example: "USD" })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  aiEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  publicApiEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  registrationEnabled?: boolean;
+
+  @ApiPropertyOptional({ enum: Role })
+  @IsOptional()
+  @IsEnum(Role)
+  defaultRole?: Role;
+}
+
+export class CreateApiKeyDto {
+  @ApiProperty({ example: "Интеграция сайта" })
+  @IsString()
+  @MinLength(3)
+  name: string;
 }

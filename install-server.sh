@@ -194,7 +194,8 @@ if [[ "$SEED_CHECK_EXIT" -eq 10 ]]; then
   log "Добавляю демо-пользователей и демо-данные CRM"
   docker compose -f docker-compose.prod.yml --env-file .env run --rm -T backend npm run seed < /dev/null
 elif [[ "$SEED_CHECK_EXIT" -eq 0 ]]; then
-  log "В базе уже есть пользователи: демо-данные не перезаписываю"
+  log "В базе уже есть пользователи: CRM-данные не перезаписываю, обновляю только системные аккаунты и настройки"
+  docker compose -f docker-compose.prod.yml --env-file .env run --rm -T backend npm run seed:system < /dev/null
 else
   fail "не удалось проверить состояние базы перед seed"
 fi
@@ -223,8 +224,9 @@ NexusRM готов.
 Swagger:    https://$DOMAIN/api/docs
 
 Демо-вход:
-  admin@nexusrm.ai / admin123
-  manager@nexusrm.ai / manager123
+  admin@nexusrm.ai / admin123      Алексей Орлов, admin
+  manager@nexusrm.ai / manager123  Мария Чен, manager
+  viewer@nexusrm.ai / viewer123    Илья Соколов, viewer
 
 Демо-ключ публичного API:
   nxrm_demo_public_key

@@ -1,4 +1,4 @@
-import { PrismaClient, Role, ClientStatus, DealStage, RiskLevel, TaskPriority, TaskStatus } from "@prisma/client";
+import { PrismaClient, Role, UserStatus, ClientStatus, DealStage, RiskLevel, TaskPriority, TaskStatus } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { createHash } from "crypto";
 
@@ -7,17 +7,24 @@ const prisma = new PrismaClient();
 async function main() {
   const adminPassword = await bcrypt.hash("admin123", 12);
   const managerPassword = await bcrypt.hash("manager123", 12);
+  const viewerPassword = await bcrypt.hash("viewer123", 12);
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@nexusrm.ai" },
-    update: {},
-    create: { email: "admin@nexusrm.ai", name: "Администратор Nexus", role: Role.admin, passwordHash: adminPassword },
+    update: { name: "Алексей Орлов", role: Role.admin, status: UserStatus.active, title: "Владелец CRM", department: "Администрирование", phone: "+7 900 100-10-10" },
+    create: { email: "admin@nexusrm.ai", name: "Алексей Орлов", role: Role.admin, status: UserStatus.active, title: "Владелец CRM", department: "Администрирование", phone: "+7 900 100-10-10", passwordHash: adminPassword },
   });
 
   const manager = await prisma.user.upsert({
     where: { email: "manager@nexusrm.ai" },
-    update: {},
-    create: { email: "manager@nexusrm.ai", name: "Мария Чен", role: Role.manager, passwordHash: managerPassword },
+    update: { name: "Мария Чен", role: Role.manager, status: UserStatus.active, title: "Руководитель продаж", department: "B2B продажи", phone: "+7 900 200-20-20" },
+    create: { email: "manager@nexusrm.ai", name: "Мария Чен", role: Role.manager, status: UserStatus.active, title: "Руководитель продаж", department: "B2B продажи", phone: "+7 900 200-20-20", passwordHash: managerPassword },
+  });
+
+  const viewer = await prisma.user.upsert({
+    where: { email: "viewer@nexusrm.ai" },
+    update: { name: "Илья Соколов", role: Role.viewer, status: UserStatus.active, title: "Финансовый аналитик", department: "Отчетность", phone: "+7 900 300-30-30" },
+    create: { email: "viewer@nexusrm.ai", name: "Илья Соколов", role: Role.viewer, status: UserStatus.active, title: "Финансовый аналитик", department: "Отчетность", phone: "+7 900 300-30-30", passwordHash: viewerPassword },
   });
 
   await prisma.auditLog.deleteMany();
@@ -74,6 +81,7 @@ async function main() {
       { type: "call", summary: "Discovery-звонок с Northstar завершен.", clientId: "northstar-outsourcing", userId: manager.id },
       { type: "risk", summary: "У RedForge нет активности 14 дней.", clientId: "redforge-studio", userId: manager.id },
       { type: "proposal", summary: "VectorCloud запросил procurement timeline.", clientId: "vectorcloud", userId: manager.id },
+      { type: "report", summary: "Илья добавил финансовую сводку по прогнозу.", clientId: "vectorcloud", userId: viewer.id },
     ],
   });
 
@@ -90,6 +98,32 @@ async function main() {
   });
 
   await prisma.auditLog.create({ data: { actorId: admin.id, action: "seed.demo_data", entity: "system" } });
+  await prisma.workspaceSetting.upsert({
+    where: { key: "workspace" },
+    update: {
+      value: {
+        workspaceName: "NexusRM",
+        timezone: "Europe/Moscow",
+        currency: "USD",
+        aiEnabled: true,
+        publicApiEnabled: true,
+        registrationEnabled: false,
+        defaultRole: Role.manager,
+      },
+    },
+    create: {
+      key: "workspace",
+      value: {
+        workspaceName: "NexusRM",
+        timezone: "Europe/Moscow",
+        currency: "USD",
+        aiEnabled: true,
+        publicApiEnabled: true,
+        registrationEnabled: false,
+        defaultRole: Role.manager,
+      },
+    },
+  });
 }
 
 main().finally(async () => prisma.$disconnect());

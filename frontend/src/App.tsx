@@ -21,13 +21,46 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { activities, clients, conversionSeries, deals, revenueSeries, stages, tasks } from "./data/demo";
 import { cn, money } from "./lib/utils";
 import { Badge, Button, Card, GhostButton, Skeleton } from "./components/ui";
 
 type Page = "Дашборд" | "Клиенты" | "Профиль клиента" | "Сделки" | "Задачи" | "AI Ассистент" | "API Документация" | "Настройки" | "Админ-панель";
+type Role = "admin" | "manager" | "viewer";
+type Session = {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: Role;
+    status?: "active" | "invited" | "disabled";
+    title?: string;
+    department?: string;
+  };
+  accessToken: string;
+  refreshToken: string;
+};
+
+const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const sessionKey = "nexusrm.session";
+
+async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${apiBase}${path}`, {
+    ...options,
+    headers,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = typeof data.message === "string" ? data.message : "API временно недоступен";
+    throw new Error(message);
+  }
+  return data as T;
+}
 
 const nav: { label: Page; icon: typeof LayoutDashboard }[] = [
   { label: "Дашборд", icon: LayoutDashboard },
@@ -61,7 +94,16 @@ const priorityLabels = {
 };
 
 export function App() {
-  const [authed, setAuthed] = useState(false);
+  const [session, setSession] = useState<Session | null>(() => {
+    const stored = localStorage.getItem(sessionKey);
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored) as Session;
+    } catch {
+      localStorage.removeItem(sessionKey);
+      return null;
+    }
+  });
   const [page, setPage] = useState<Page>("Дашборд");
   const [selectedClient, setSelectedClient] = useState(clients[0]);
   const [loading, setLoading] = useState(false);
@@ -83,7 +125,25 @@ export function App() {
     window.setTimeout(() => setLoading(false), 420);
   }
 
-  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
+  async function login(email: string, password: string) {
+    const next = await apiRequest<Session>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    setSession(next);
+    localStorage.setItem(sessionKey, JSON.stringify(next));
+    setPage("Дашборд");
+  }
+
+  function logout() {
+    setSession(null);
+    localStorage.removeItem(sessionKey);
+    setPage("Дашборд");
+  }
+
+  if (!session) return <LoginScreen onLogin={login} />;
+
+  const visibleNav = nav.filter((item) => item.label !== "Админ-панель" || session.user.role === "admin");
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(255,45,45,0.18),transparent_34%),linear-gradient(180deg,#050505,#0B0B0F)] text-white">
@@ -97,7 +157,7 @@ export function App() {
             </div>
           </div>
           <nav className="space-y-1">
-            {nav.map((item) => (
+            {visibleNav.map((item) => (
               <button
                 key={item.label}
                 onClick={() => switchPage(item.label)}
@@ -142,7 +202,11 @@ export function App() {
                 <Plus size={18} />
                 Новая сделка
               </Button>
-              <GhostButton onClick={() => setAuthed(false)}>
+              <div className="hidden rounded-md border border-nexus-border bg-white/[0.03] px-3 py-2 text-right text-xs md:block">
+                <div className="font-bold text-white">{session.user.name}</div>
+                <div className="text-nexus-muted">{session.user.role}</div>
+              </div>
+              <GhostButton onClick={logout}>
                 <LogOut size={18} />
               </GhostButton>
             </div>
@@ -157,8 +221,8 @@ export function App() {
             {!loading && page === "Задачи" && <TasksPage />}
             {!loading && page === "AI Ассистент" && <AiPage />}
             {!loading && page === "API Документация" && <ApiDocsPage />}
-            {!loading && page === "Настройки" && <SettingsPage />}
-            {!loading && page === "Админ-панель" && <AdminPage />}
+            {!loading && page === "Настройки" && <SettingsPage session={session} />}
+            {!loading && page === "Админ-панель" && <AdminPage session={session} />}
           </div>
         </main>
       </div>
@@ -166,7 +230,29 @@ export function App() {
   );
 }
 
-function LoginScreen({ onLogin }: { onLogin: () => void }) {
+function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) => Promise<void> }) {
+  const [email, setEmail] = useState("admin@nexusrm.ai");
+  const [password, setPassword] = useState("admin123");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    setError("");
+    setLoading(true);
+    try {
+      await onLogin(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось войти");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function useAccount(nextEmail: string, nextPassword: string) {
+    setEmail(nextEmail);
+    setPassword(nextPassword);
+  }
+
   return (
     <div className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_20%_10%,rgba(255,45,45,0.22),transparent_30%),linear-gradient(135deg,#050505,#0B0B0F)] p-5 text-white">
       <Card className="w-full max-w-md p-7">
@@ -178,14 +264,19 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           </div>
         </div>
         <label className="mb-2 block text-sm text-zinc-300">Email</label>
-        <input defaultValue="admin@nexusrm.ai" className="mb-4 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
+        <input value={email} onChange={(event) => setEmail(event.target.value)} className="mb-4 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
         <label className="mb-2 block text-sm text-zinc-300">Пароль</label>
-        <input defaultValue="admin123" type="password" className="mb-5 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
-        <Button className="w-full" onClick={onLogin}>
+        <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" className="mb-5 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
+        {error ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
+        <Button className="w-full" onClick={() => void submit()} disabled={loading}>
           <Lock size={18} />
-          Войти в рабочее пространство
+          {loading ? "Проверяем доступ..." : "Войти в рабочее пространство"}
         </Button>
-        <p className="mt-4 text-center text-xs text-nexus-muted">Демо: admin@nexusrm.ai / admin123</p>
+        <div className="mt-4 grid gap-2 text-xs text-nexus-muted">
+          <button className="rounded-md border border-nexus-border p-2 text-left hover:border-nexus-red/60" onClick={() => useAccount("admin@nexusrm.ai", "admin123")}>Админ: Алексей Орлов</button>
+          <button className="rounded-md border border-nexus-border p-2 text-left hover:border-nexus-red/60" onClick={() => useAccount("manager@nexusrm.ai", "manager123")}>Менеджер: Мария Чен</button>
+          <button className="rounded-md border border-nexus-border p-2 text-left hover:border-nexus-red/60" onClick={() => useAccount("viewer@nexusrm.ai", "viewer123")}>Просмотр: Илья Соколов</button>
+        </div>
       </Card>
     </div>
   );
@@ -415,7 +506,6 @@ function TasksPage() {
 }
 
 function AiPage() {
-  const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
   const [message, setMessage] = useState("Какие сделки сейчас самые рискованные и что делать менеджеру?");
   const [chat, setChat] = useState([
     {
@@ -515,8 +605,14 @@ function AiPage() {
 }
 
 function ApiDocsPage() {
-  const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
   const endpoints = [
+    ["POST", "/api/auth/login", "Вход пользователя, выдача access/refresh JWT"],
+    ["POST", "/api/auth/refresh", "Обновление access token"],
+    ["GET", "/api/auth/me", "Проверка текущего пользователя"],
+    ["GET", "/api/admin/overview", "Сводка админ-панели"],
+    ["GET", "/api/admin/users", "Пользователи, роли, статусы и профили"],
+    ["PATCH", "/api/admin/settings", "Настройки рабочего пространства"],
+    ["POST", "/api/admin/api-keys", "Выпуск публичного API-ключа"],
     ["POST", "/api/ai/chat", "AI чат по CRM-контексту"],
     ["GET", "/api/ai/insights", "AI-инсайты, риски и score"],
     ["POST", "/api/public/leads", "Создать входящий лид"],
@@ -532,7 +628,7 @@ function ApiDocsPage() {
         <Code2 className="mb-4 text-nexus-red" size={32} />
         <h2 className="text-2xl font-black">Документация API</h2>
         <p className="mt-2 max-w-3xl text-nexus-muted">
-          Эта страница доступна внутри frontend даже если Swagger временно недоступен. Swagger должен открываться по адресу `/api/docs`, когда backend запущен.
+          Эта страница доступна внутри frontend даже если Swagger временно недоступен. Swagger открывается по адресу `/api/docs`, когда backend контейнер запущен.
         </p>
         <a className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-nexus-red" href={`${apiBase}/api/docs`} target="_blank" rel="noreferrer">
           Открыть Swagger документацию
@@ -553,6 +649,16 @@ function ApiDocsPage() {
       </Card>
 
       <Card className="p-6">
+        <h3 className="mb-3 text-lg font-bold">Пример входа и вызова защищенного API</h3>
+        <pre className="overflow-x-auto rounded-md border border-nexus-border bg-black/50 p-4 text-xs text-red-100">{`curl -X POST ${apiBase}/api/auth/login \\
+  -H "Content-Type: application/json" \\
+  -d '{"email":"admin@nexusrm.ai","password":"admin123"}'
+
+curl ${apiBase}/api/admin/overview \\
+  -H "Authorization: Bearer <ACCESS_TOKEN>"`}</pre>
+      </Card>
+
+      <Card className="p-6">
         <h3 className="mb-3 text-lg font-bold">Если `/api/docs` показывает 502</h3>
         <p className="text-sm leading-6 text-nexus-muted">
           Это означает, что Cloudflare видит домен, но origin/backend не отвечает. Повторите серверную команду установки после последнего обновления репозитория и проверьте логи backend/Caddy.
@@ -565,42 +671,192 @@ docker compose -f docker-compose.prod.yml --env-file .env logs -f backend caddy`
   );
 }
 
-function SettingsPage() {
+type AdminOverview = Record<"users" | "clients" | "deals" | "tasks" | "apiKeys" | "webhooks" | "auditLogs", number>;
+type AdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  status: "active" | "invited" | "disabled";
+  title?: string;
+  department?: string;
+  phone?: string;
+  lastLoginAt?: string;
+};
+type WorkspaceSettings = {
+  workspaceName: string;
+  timezone: string;
+  currency: string;
+  aiEnabled: boolean;
+  publicApiEnabled: boolean;
+  registrationEnabled: boolean;
+  defaultRole: Role;
+};
+type ApiKeyInfo = {
+  id: string;
+  name: string;
+  prefix: string;
+  isActive: boolean;
+  createdAt: string;
+  lastUsedAt?: string;
+  owner?: { email: string; name: string } | null;
+};
+
+function SettingsPage({ session }: { session: Session }) {
+  const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (session.user.role !== "admin") return;
+    void apiRequest<WorkspaceSettings>("/api/admin/settings", {}, session.accessToken)
+      .then(setSettings)
+      .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить настройки"));
+  }, [session.accessToken, session.user.role]);
+
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Card className="p-6">
         <h2 className="mb-4 text-xl font-black">Настройки пространства</h2>
+        {error ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{error}</div> : null}
         <Toggle label="Темная тема по умолчанию" enabled />
-        <Toggle label="AI уведомления о рисках" enabled />
-        <Toggle label="Доступ к публичному API" enabled />
+        <Toggle label="AI уведомления о рисках" enabled={settings?.aiEnabled ?? true} />
+        <Toggle label="Доступ к публичному API" enabled={settings?.publicApiEnabled ?? true} />
+        <Toggle label="Самостоятельная регистрация" enabled={settings?.registrationEnabled ?? false} />
       </Card>
       <Card className="p-6">
-        <h2 className="mb-4 text-xl font-black">API ключи</h2>
-        <div className="rounded-md border border-nexus-border bg-black/35 p-4 font-mono text-sm">nxrm_demo_public_key</div>
+        <h2 className="mb-4 text-xl font-black">Профиль аккаунта</h2>
+        <div className="space-y-3 text-sm">
+          <InfoRow label="Имя" value={session.user.name} />
+          <InfoRow label="Email" value={session.user.email} />
+          <InfoRow label="Роль" value={session.user.role} />
+          <InfoRow label="Workspace" value={settings?.workspaceName ?? "NexusRM"} />
+          <InfoRow label="Часовой пояс" value={settings?.timezone ?? "Europe/Moscow"} />
+          <InfoRow label="Валюта" value={settings?.currency ?? "USD"} />
+        </div>
       </Card>
     </div>
   );
 }
 
-function AdminPage() {
+function AdminPage({ session }: { session: Session }) {
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
+  const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
+  const [newKey, setNewKey] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (session.user.role !== "admin") return;
+    void Promise.all([
+      apiRequest<AdminOverview>("/api/admin/overview", {}, session.accessToken),
+      apiRequest<AdminUser[]>("/api/admin/users", {}, session.accessToken),
+      apiRequest<WorkspaceSettings>("/api/admin/settings", {}, session.accessToken),
+      apiRequest<ApiKeyInfo[]>("/api/admin/api-keys", {}, session.accessToken),
+    ])
+      .then(([nextOverview, nextUsers, nextSettings, nextApiKeys]) => {
+        setOverview(nextOverview);
+        setUsers(nextUsers);
+        setSettings(nextSettings);
+        setApiKeys(nextApiKeys);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить админ-панель"));
+  }, [session.accessToken, session.user.role]);
+
+  async function createKey() {
+    setError("");
+    try {
+      const result = await apiRequest<{ apiKey: string; record: ApiKeyInfo }>("/api/admin/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ name: "Ключ админ-панели" }),
+      }, session.accessToken);
+      setNewKey(result.apiKey);
+      setApiKeys((items) => [result.record, ...items]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать ключ");
+    }
+  }
+
+  if (session.user.role !== "admin") {
+    return <EmptyState title="Недостаточно прав" detail="Админ-панель доступна только пользователям с ролью admin." />;
+  }
+
   return (
-    <Card className="p-6">
-      <h2 className="mb-4 text-xl font-black">Админ-панель</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[620px] text-left text-sm">
-          <thead className="text-nexus-muted">
-            <tr><th className="p-3">Пользователь</th><th className="p-3">Роль</th><th className="p-3">Статус</th><th className="p-3">Безопасность</th></tr>
-          </thead>
-          <tbody>
-            {[["Администратор Nexus", "admin"], ["Мария Чен", "manager"], ["Демо только чтение", "viewer"]].map(([name, role]) => (
-              <tr key={name} className="border-t border-nexus-border">
-                <td className="p-3 font-bold">{name}</td><td className="p-3">{role}</td><td className="p-3"><Badge tone="green">активен</Badge></td><td className="p-3">JWT + RBAC</td>
-              </tr>
+    <div className="space-y-5">
+      {error ? <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">{error}</div> : null}
+
+      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
+        {(overview ? Object.entries(overview) : []).map(([label, value]) => (
+          <Card key={label} className="p-4">
+            <div className="text-xs uppercase text-nexus-muted">{label}</div>
+            <div className="mt-2 text-2xl font-black">{value}</div>
+          </Card>
+        ))}
+      </section>
+
+      <Card className="p-6">
+        <h2 className="mb-4 text-xl font-black">Пользователи и роли</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left text-sm">
+            <thead className="text-nexus-muted">
+              <tr><th className="p-3">Пользователь</th><th className="p-3">Должность</th><th className="p-3">Роль</th><th className="p-3">Статус</th><th className="p-3">Последний вход</th></tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id} className="border-t border-nexus-border">
+                  <td className="p-3"><div className="font-bold">{user.name}</div><div className="text-xs text-nexus-muted">{user.email}</div></td>
+                  <td className="p-3">{user.title ?? "Не указано"}<div className="text-xs text-nexus-muted">{user.department ?? ""}</div></td>
+                  <td className="p-3">{user.role}</td>
+                  <td className="p-3"><Badge tone={user.status === "active" ? "green" : user.status === "disabled" ? "red" : "amber"}>{user.status}</Badge></td>
+                  <td className="p-3">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("ru-RU") : "еще не входил"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <Card className="p-6">
+          <h2 className="mb-4 text-xl font-black">Системные настройки</h2>
+          <div className="space-y-3 text-sm">
+            <InfoRow label="Рабочее пространство" value={settings?.workspaceName ?? "NexusRM"} />
+            <InfoRow label="Часовой пояс" value={settings?.timezone ?? "Europe/Moscow"} />
+            <InfoRow label="Валюта" value={settings?.currency ?? "USD"} />
+            <InfoRow label="Роль по умолчанию" value={settings?.defaultRole ?? "manager"} />
+            <InfoRow label="AI" value={settings?.aiEnabled ? "включен" : "выключен"} />
+            <InfoRow label="Публичный API" value={settings?.publicApiEnabled ? "включен" : "выключен"} />
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-xl font-black">API ключи</h2>
+            <Button onClick={() => void createKey()}><Plus size={18} />Создать ключ</Button>
+          </div>
+          {newKey ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 font-mono text-xs text-red-100">{newKey}</div> : null}
+          <div className="space-y-3">
+            {apiKeys.map((key) => (
+              <div key={key.id} className="rounded-md border border-nexus-border bg-black/35 p-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div><div className="font-bold">{key.name}</div><div className="font-mono text-xs text-nexus-muted">{key.prefix}...</div></div>
+                  <Badge tone={key.isActive ? "green" : "red"}>{key.isActive ? "активен" : "отключен"}</Badge>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+          </div>
+        </Card>
+      </section>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-md border border-nexus-border bg-white/[0.025] p-3">
+      <span className="text-nexus-muted">{label}</span>
+      <span className="text-right font-medium">{value}</span>
+    </div>
   );
 }
 

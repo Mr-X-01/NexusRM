@@ -47,8 +47,11 @@ curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server
 
 | Роль | Email | Пароль |
 | --- | --- | --- |
-| Админ | `admin@nexusrm.ai` | `admin123` |
-| Менеджер | `manager@nexusrm.ai` | `manager123` |
+| Админ: Алексей Орлов | `admin@nexusrm.ai` | `admin123` |
+| Менеджер: Мария Чен | `manager@nexusrm.ai` | `manager123` |
+| Просмотр: Илья Соколов | `viewer@nexusrm.ai` | `viewer123` |
+
+Аккаунты отличаются не только подписью: роли проходят через backend JWT/RBAC, админ видит расширенную админ-панель, менеджер работает с CRM, а viewer не получает доступ к административным endpoints.
 
 Демо-ключ публичного API:
 
@@ -83,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server
 - проверяет, что backend и Swagger `/api/docs` реально отвечают;
 - открывает `80/443` в `ufw`, если firewall установлен.
 
-Повторный запуск той же команды работает как обновление. Секреты и пароль базы сохраняются, а seed запускается только если в базе еще нет пользователей.
+Повторный запуск той же команды работает как обновление. Секреты и пароль базы сохраняются. Если CRM-данные уже есть, установщик не перезаписывает клиентов, сделки и задачи, но безопасно обновляет системные аккаунты, роли, настройки workspace и demo API key.
 
 ## График демо-метрик
 
@@ -106,6 +109,8 @@ curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server
 - клиенты, контакты, сделки, задачи, активности и заметки;
 - роли `admin`, `manager`, `viewer`;
 - JWT access/refresh авторизация;
+- реальные профили пользователей: должность, отдел, статус, последний вход;
+- расширенная админ-панель: пользователи, системные настройки, API-ключи, audit logs и сводка объектов;
 - Kanban pipeline сделок;
 - AI sales mock: оценка сделок, health score, прогноз и поиск рисков;
 - AI чат через DeepSeek при наличии `DEEPSEEK_API_KEY`;

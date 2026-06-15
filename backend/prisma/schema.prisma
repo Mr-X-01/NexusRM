@@ -13,6 +13,12 @@ enum Role {
   viewer
 }
 
+enum UserStatus {
+  active
+  invited
+  disabled
+}
+
 enum ClientStatus {
   new
   active
@@ -54,14 +60,28 @@ model User {
   name           String
   passwordHash   String
   role           Role       @default(manager)
+  status         UserStatus @default(active)
+  title          String?
+  department     String?
+  phone          String?
   refreshHash    String?
+  lastLoginAt    DateTime?
   createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
   clients        Client[]   @relation("ClientManager")
   assignedTasks  Task[]     @relation("TaskAssignee")
   notes          Note[]
   activities     Activity[]
   apiKeys        ApiKey[]
   auditLogs      AuditLog[]
+}
+
+model WorkspaceSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Client {
