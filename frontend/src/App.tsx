@@ -24,7 +24,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { activities, clients, conversionSeries, deals, revenueSeries, stages, tasks, type DealStage } from "./data/demo";
+import { activities, clients, conversionSeries, deals, revenueSeries, stages, tasks, type ClientStatus, type DealStage, type TaskPriority, type TaskStatus } from "./data/demo";
+import { getApiErrorMessage, isExpiredTokenMessage } from "./lib/api";
+import { buildClient, type CrmClient } from "./lib/clients";
+import { buildTask, moveTaskStatus, type CrmTask } from "./lib/tasks";
 import { cn, money } from "./lib/utils";
 import { Badge, Button, Card, GhostButton, Skeleton } from "./components/ui";
 
@@ -44,6 +47,16 @@ type Session = {
   refreshToken: string;
 };
 type AuthedRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
+type DashboardStats = {
+  clients: CrmClient[];
+  deals: typeof deals;
+  tasks: CrmTask[];
+  totalPipeline: number;
+  weightedForecast: number;
+  atRiskClients: CrmClient[];
+  urgentTasks: CrmTask[];
+  wonRevenue: number;
+};
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 const sessionKey = "nexusrm.session";
@@ -67,14 +80,13 @@ async function apiRequest<T>(path: string, options: RequestInit = {}, token?: st
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = typeof data.message === "string" ? data.message : "API временно недоступен";
-    throw new Error(message);
+    throw new Error(getApiErrorMessage(data));
   }
   return data as T;
 }
 
 function isExpiredTokenError(error: unknown) {
-  return error instanceof Error && /invalid or expired access token|missing access token/i.test(error.message);
+  return error instanceof Error && isExpiredTokenMessage(error.message);
 }
 
 const nav: { label: Page; icon: typeof LayoutDashboard }[] = [
@@ -120,11 +132,16 @@ export function App() {
     }
   });
   const [page, setPage] = useState<Page>("Дашборд");
-  const [selectedClient, setSelectedClient] = useState(clients[0]);
+  const [clientList, setClientList] = useState<CrmClient[]>(clients);
+  const [selectedClient, setSelectedClient] = useState<CrmClient>(clients[0]);
   const [loading, setLoading] = useState(false);
   const [dealList, setDealList] = useState(deals);
+  const [taskList, setTaskList] = useState<CrmTask[]>(tasks);
+  const [newClientOpen, setNewClientOpen] = useState(false);
   const [newDealOpen, setNewDealOpen] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState("");
 
   function createDeal(deal: (typeof deals)[number]) {
     setDealList((prev) => [deal, ...prev]);
@@ -132,16 +149,47 @@ export function App() {
     setPage("Сделки");
   }
 
+  function createClient(client: CrmClient) {
+    setClientList((prev) => [client, ...prev]);
+    setSelectedClient(client);
+    setNewClientOpen(false);
+    setPage("Клиенты");
+  }
+
+  function createTask(task: CrmTask) {
+    setTaskList((prev) => [task, ...prev]);
+    setNewTaskOpen(false);
+    setPage("Задачи");
+  }
+
+  function moveTask(taskId: string, status: TaskStatus) {
+    setTaskList((prev) => moveTaskStatus(prev, taskId, status));
+  }
+
   const kpis = useMemo(
     () => [
-      { label: "Всего клиентов", value: clients.length.toString(), delta: "+18%", icon: Users },
-      { label: "Активные сделки", value: deals.filter((deal) => !["Выиграна", "Проиграна"].includes(deal.stage)).length.toString(), delta: "+7", icon: KanbanSquare },
-      { label: "Выручка за месяц", value: money(42000), delta: "+24%", icon: BarChart3 },
+      { label: "Всего клиентов", value: clientList.length.toString(), delta: "+18%", icon: Users },
+      { label: "Активные сделки", value: dealList.filter((deal) => !["Выиграна", "Проиграна"].includes(deal.stage)).length.toString(), delta: "+7", icon: KanbanSquare },
+      { label: "Pipeline", value: money(dealList.reduce((sum, deal) => sum + deal.amount, 0)), delta: "+24%", icon: BarChart3 },
       { label: "Конверсия", value: "31%", delta: "+4.2%", icon: Activity },
-      { label: "Задачи на сегодня", value: tasks.filter((task) => task.due === "Сегодня").length.toString(), delta: "срочно", icon: Bell },
+      { label: "Задачи на сегодня", value: taskList.filter((task) => task.due === "Сегодня").length.toString(), delta: "срочно", icon: Bell },
     ],
-    [],
+    [clientList.length, dealList, taskList],
   );
+
+  const dashboardStats = useMemo<DashboardStats>(() => {
+    const activeDeals = dealList.filter((deal) => !["Выиграна", "Проиграна"].includes(deal.stage));
+    return {
+      clients: clientList,
+      deals: dealList,
+      tasks: taskList,
+      totalPipeline: activeDeals.reduce((sum, deal) => sum + deal.amount, 0),
+      weightedForecast: activeDeals.reduce((sum, deal) => sum + deal.amount * (deal.probability / 100), 0),
+      atRiskClients: clientList.filter((client) => client.status === "at_risk" || client.healthScore < 60),
+      urgentTasks: taskList.filter((task) => task.priority === "urgent" && task.status !== "done"),
+      wonRevenue: dealList.filter((deal) => deal.stage === "Выиграна").reduce((sum, deal) => sum + deal.amount, 0),
+    };
+  }, [clientList, dealList, taskList]);
 
   function switchPage(next: Page) {
     setMobileNavOpen(false);
@@ -156,6 +204,7 @@ export function App() {
       body: JSON.stringify({ email, password }),
     });
     setSession(next);
+    setSessionNotice("");
     localStorage.setItem(sessionKey, JSON.stringify(next));
     setPage("Дашборд");
   }
@@ -166,13 +215,21 @@ export function App() {
       return await apiRequest<T>(path, options, session.accessToken);
     } catch (error) {
       if (!isExpiredTokenError(error)) throw error;
-      const refreshed = await apiRequest<Session>("/api/auth/refresh", {
-        method: "POST",
-        body: JSON.stringify({ refreshToken: session.refreshToken }),
-      });
-      setSession(refreshed);
-      localStorage.setItem(sessionKey, JSON.stringify(refreshed));
-      return apiRequest<T>(path, options, refreshed.accessToken);
+      try {
+        const refreshed = await apiRequest<Session>("/api/auth/refresh", {
+          method: "POST",
+          body: JSON.stringify({ refreshToken: session.refreshToken }),
+        });
+        setSession(refreshed);
+        localStorage.setItem(sessionKey, JSON.stringify(refreshed));
+        return apiRequest<T>(path, options, refreshed.accessToken);
+      } catch {
+        setSession(null);
+        localStorage.removeItem(sessionKey);
+        setPage("Дашборд");
+        setSessionNotice("Сессия истекла. Войдите заново, чтобы продолжить работу.");
+        throw new Error("Сессия истекла. Войдите заново.");
+      }
     }
   }
 
@@ -182,7 +239,7 @@ export function App() {
     setPage("Дашборд");
   }
 
-  if (!session) return <LoginScreen onLogin={login} />;
+  if (!session) return <LoginScreen onLogin={login} notice={sessionNotice} />;
 
   const visibleNav = nav.filter((item) => item.label !== "Админ-панель" || session.user.role === "admin");
 
@@ -250,9 +307,9 @@ export function App() {
               <GhostButton className="hidden size-10 shrink-0 px-0 sm:inline-flex" aria-label="Уведомления">
                 <Bell size={18} />
               </GhostButton>
-              <Button className="shrink-0 px-3 md:px-4" onClick={() => setNewDealOpen(true)}>
+              <Button className="shrink-0 px-3 md:px-4" onClick={() => page === "Задачи" ? setNewTaskOpen(true) : page === "Клиенты" ? setNewClientOpen(true) : setNewDealOpen(true)}>
                 <Plus size={18} />
-                <span className="hidden sm:inline">Новая сделка</span>
+                <span className="hidden sm:inline">{page === "Задачи" ? "Новая задача" : page === "Клиенты" ? "Новый клиент" : "Новая сделка"}</span>
               </Button>
               <GhostButton className="size-10 shrink-0 px-0" onClick={logout} aria-label="Выйти">
                 <LogOut size={18} />
@@ -262,19 +319,21 @@ export function App() {
 
           <div className="p-4 md:p-7">
             {loading ? <LoadingState /> : null}
-            {!loading && page === "Дашборд" && <Dashboard kpis={kpis} />}
-            {!loading && page === "Клиенты" && <ClientsPage onSelect={(client) => { setSelectedClient(client); switchPage("Профиль клиента"); }} />}
+            {!loading && page === "Дашборд" && <Dashboard kpis={kpis} stats={dashboardStats} />}
+            {!loading && page === "Клиенты" && <ClientsPage clients={clientList} onCreateClient={() => setNewClientOpen(true)} onSelect={(client) => { setSelectedClient(client); switchPage("Профиль клиента"); }} />}
             {!loading && page === "Профиль клиента" && <ClientProfile client={selectedClient} />}
             {!loading && page === "Сделки" && <DealsPage deals={dealList} />}
-            {!loading && page === "Задачи" && <TasksPage />}
-            {!loading && page === "AI Ассистент" && <AiPage />}
+            {!loading && page === "Задачи" && <TasksPage tasks={taskList} onMoveTask={moveTask} onCreateTask={() => setNewTaskOpen(true)} />}
+            {!loading && page === "AI Ассистент" && <AiPage stats={dashboardStats} />}
             {!loading && page === "API Документация" && <ApiDocsPage />}
             {!loading && page === "Настройки" && <SettingsPage session={session} request={authenticatedRequest} />}
             {!loading && page === "Админ-панель" && <AdminPage session={session} request={authenticatedRequest} />}
           </div>
         </main>
       </div>
+      {newClientOpen && <NewClientModal onClose={() => setNewClientOpen(false)} onCreate={createClient} />}
       {newDealOpen && <NewDealModal onClose={() => setNewDealOpen(false)} onCreate={createDeal} />}
+      {newTaskOpen && <NewTaskModal onClose={() => setNewTaskOpen(false)} onCreate={createTask} />}
     </div>
   );
 }
@@ -299,7 +358,7 @@ function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; 
   );
 }
 
-function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) => Promise<void> }) {
+function LoginScreen({ onLogin, notice }: { onLogin: (email: string, password: string) => Promise<void>; notice?: string }) {
   const [email, setEmail] = useState("admin@nexusrm.ai");
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
@@ -336,6 +395,7 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
         <input value={email} onChange={(event) => setEmail(event.target.value)} className="mb-4 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
         <label className="mb-2 block text-sm text-zinc-300">Пароль</label>
         <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" className="mb-5 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
+        {notice ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{notice}</div> : null}
         {error ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
         <Button className="w-full" onClick={() => void submit()} disabled={loading}>
           <Lock size={18} />
@@ -351,7 +411,17 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function Dashboard({ kpis }: { kpis: { label: string; value: string; delta: string; icon: typeof Users }[] }) {
+function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delta: string; icon: typeof Users }[]; stats: DashboardStats }) {
+  const stageBreakdown = stages.map((stage) => ({
+    stage,
+    count: stats.deals.filter((deal) => deal.stage === stage).length,
+    amount: stats.deals.filter((deal) => deal.stage === stage).reduce((sum, deal) => sum + deal.amount, 0),
+  }));
+  const taskBreakdown = (["todo", "in_progress", "done"] as const).map((status) => ({
+    status,
+    count: stats.tasks.filter((task) => task.status === status).length,
+  }));
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -372,7 +442,7 @@ function Dashboard({ kpis }: { kpis: { label: string; value: string; delta: stri
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold">Прогноз выручки</h2>
-              <p className="text-sm text-nexus-muted">AI-прогноз на месяц: {money(42000)}</p>
+              <p className="text-sm text-nexus-muted">Взвешенный forecast: {money(Math.round(stats.weightedForecast))}</p>
             </div>
             <Badge tone="red">AI прогноз</Badge>
           </div>
@@ -397,23 +467,42 @@ function Dashboard({ kpis }: { kpis: { label: string; value: string; delta: stri
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-4 text-lg font-bold">AI уведомления</h2>
-          <div className="space-y-3">
-            {[
-              "Клиент в зоне риска: нет активности 14 дней",
-              "Вероятность закрытия сделки: 72%",
-              "Рекомендованный шаг: отправить письмо сегодня",
-            ].map((alert) => (
-              <div key={alert} className="rounded-md border border-red-500/20 bg-red-500/8 p-3 text-sm text-zinc-200">
-                <Sparkles className="mb-2 text-nexus-red" size={16} />
-                {alert}
-              </div>
-            ))}
+          <h2 className="mb-4 text-lg font-bold">Операционная сводка</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${stats.deals.length} сделок всего`} />
+            <MetricTile label="Won revenue" value={money(stats.wonRevenue)} detail="закрытая выручка" />
+            <MetricTile label="Клиенты в риске" value={stats.atRiskClients.length.toString()} detail={stats.atRiskClients[0]?.name ?? "критичных нет"} tone={stats.atRiskClients.length ? "red" : "green"} />
+            <MetricTile label="Срочные задачи" value={stats.urgentTasks.length.toString()} detail={stats.urgentTasks[0]?.title ?? "нет просрочки"} tone={stats.urgentTasks.length ? "amber" : "green"} />
           </div>
         </Card>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-5 xl:grid-cols-3">
+        <Card className="p-5">
+          <h2 className="mb-4 text-lg font-bold">Pipeline по стадиям</h2>
+          <div className="space-y-3">
+            {stageBreakdown.map((item) => (
+              <div key={item.stage} className="rounded-md border border-nexus-border bg-white/[0.025] p-3">
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span className="font-bold">{item.stage}</span>
+                  <span className="text-nexus-muted">{item.count}</span>
+                </div>
+                <div className="text-sm text-red-100">{money(item.amount)}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card className="p-5">
+          <h2 className="mb-4 text-lg font-bold">Задачи по статусам</h2>
+          <div className="space-y-3">
+            {taskBreakdown.map((item) => (
+              <div key={item.status} className="flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm">
+                <span>{taskStatusLabels[item.status]}</span>
+                <Badge>{item.count}</Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
         <Card className="p-5">
           <h2 className="mb-4 text-lg font-bold">Воронка конверсии</h2>
           <div className="h-60">
@@ -428,6 +517,9 @@ function Dashboard({ kpis }: { kpis: { label: string; value: string; delta: stri
             </ResponsiveContainer>
           </div>
         </Card>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card className="p-5">
           <h2 className="mb-4 text-lg font-bold">Последние активности</h2>
           <div className="space-y-3">
@@ -444,34 +536,114 @@ function Dashboard({ kpis }: { kpis: { label: string; value: string; delta: stri
   );
 }
 
-function ClientsPage({ onSelect }: { onSelect: (client: (typeof clients)[number]) => void }) {
+function MetricTile({ label, value, detail, tone = "default" }: { label: string; value: string; detail: string; tone?: "default" | "red" | "green" | "amber" }) {
+  const tones = {
+    default: "border-nexus-border bg-white/[0.025]",
+    red: "border-red-500/25 bg-red-500/8",
+    green: "border-emerald-500/25 bg-emerald-500/8",
+    amber: "border-amber-500/25 bg-amber-500/8",
+  };
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
-      {clients.map((client) => (
-        <Card key={client.id} className="p-5">
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h2 className="text-xl font-black">{client.name}</h2>
-              <p className="text-sm text-nexus-muted">{client.industry}</p>
-            </div>
-            <Badge tone={client.status === "at_risk" ? "red" : client.status === "active" ? "green" : "default"}>{clientStatusLabels[client.status]}</Badge>
-          </div>
-          <div className="mb-4 flex flex-wrap gap-2">{client.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div>
-          <div className="mb-4 text-sm text-zinc-300">Менеджер: {client.manager}</div>
-          <div className="mb-5 h-2 rounded-full bg-white/[0.06]">
-            <div className="h-2 rounded-full bg-nexus-red" style={{ width: `${client.healthScore}%` }} />
-          </div>
-          <GhostButton className="w-full" onClick={() => onSelect(client)}>
-            Открыть профиль
-            <ChevronRight size={16} />
-          </GhostButton>
-        </Card>
-      ))}
+    <div className={cn("rounded-md border p-3", tones[tone])}>
+      <div className="text-xs uppercase text-nexus-muted">{label}</div>
+      <div className="mt-1 text-xl font-black">{value}</div>
+      <div className="mt-1 text-xs text-zinc-400">{detail}</div>
     </div>
   );
 }
 
-function ClientProfile({ client }: { client: (typeof clients)[number] }) {
+function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: (client: CrmClient) => void }) {
+  const [name, setName] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [tags, setTags] = useState("");
+  const [manager, setManager] = useState("Администратор Nexus");
+  const [status, setStatus] = useState<ClientStatus>("new");
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (!name.trim()) {
+      setError("Укажите название клиента");
+      return;
+    }
+    if (!industry.trim()) {
+      setError("Укажите отрасль клиента");
+      return;
+    }
+    onCreate(buildClient({ name, industry, tags, manager, status }));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+      <Card className="w-full max-w-lg p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Новый клиент</h2>
+          <GhostButton className="h-8 px-3" onClick={onClose}>Закрыть</GhostButton>
+        </div>
+        <div className="space-y-3">
+          <Field label="Название компании">
+            <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Acme Systems" />
+          </Field>
+          <Field label="Отрасль">
+            <input className={inputClass} value={industry} onChange={(event) => setIndustry(event.target.value)} placeholder="Например, B2B SaaS" />
+          </Field>
+          <Field label="Теги через запятую">
+            <input className={inputClass} value={tags} onChange={(event) => setTags(event.target.value)} placeholder="enterprise, cloud" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Менеджер">
+              <input className={inputClass} value={manager} onChange={(event) => setManager(event.target.value)} placeholder="Администратор Nexus" />
+            </Field>
+            <Field label="Статус">
+              <select className={inputClass} value={status} onChange={(event) => setStatus(event.target.value as ClientStatus)}>
+                <option value="new">новый</option>
+                <option value="active">активный</option>
+                <option value="at_risk">риск</option>
+                <option value="lost">потерян</option>
+              </select>
+            </Field>
+          </div>
+          {error && <p className="text-sm text-red-300">{error}</p>}
+          <Button className="w-full" onClick={submit}><Plus size={18} />Создать клиента</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ClientsPage({ clients, onCreateClient, onSelect }: { clients: CrmClient[]; onCreateClient: () => void; onSelect: (client: CrmClient) => void }) {
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-nexus-muted">Добавляйте клиентов вручную и открывайте профиль для сделок, задач и health score.</p>
+        <Button onClick={onCreateClient}><Plus size={18} />Новый клиент</Button>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-3">
+        {clients.map((client) => (
+          <Card key={client.id} className="p-5">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-black">{client.name}</h2>
+                <p className="text-sm text-nexus-muted">{client.industry}</p>
+              </div>
+              <Badge tone={client.status === "at_risk" ? "red" : client.status === "active" ? "green" : "default"}>{clientStatusLabels[client.status]}</Badge>
+            </div>
+            <div className="mb-4 flex flex-wrap gap-2">{client.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div>
+            <div className="mb-4 text-sm text-zinc-300">Менеджер: {client.manager}</div>
+            <div className="mb-5 h-2 rounded-full bg-white/[0.06]">
+              <div className="h-2 rounded-full bg-nexus-red" style={{ width: `${client.healthScore}%` }} />
+            </div>
+            <GhostButton className="w-full" onClick={() => onSelect(client)}>
+              Открыть профиль
+              <ChevronRight size={16} />
+            </GhostButton>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientProfile({ client }: { client: CrmClient }) {
   const clientDeals = deals.filter((deal) => deal.client === client.name);
   return (
     <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
@@ -607,6 +779,58 @@ function NewDealModal({ onClose, onCreate }: { onClose: () => void; onCreate: (d
   );
 }
 
+function NewTaskModal({ onClose, onCreate }: { onClose: () => void; onCreate: (task: CrmTask) => void }) {
+  const [title, setTitle] = useState("");
+  const [client, setClient] = useState(clients[0].name);
+  const [due, setDue] = useState("Сегодня");
+  const [priority, setPriority] = useState<TaskPriority>("medium");
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (!title.trim()) {
+      setError("Укажите название задачи");
+      return;
+    }
+    onCreate(buildTask({ title, client, due, priority }));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+      <Card className="w-full max-w-lg p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Новая задача</h2>
+          <GhostButton className="h-8 px-3" onClick={onClose}>Закрыть</GhostButton>
+        </div>
+        <div className="space-y-3">
+          <Field label="Название">
+            <input className={inputClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например, Позвонить клиенту" />
+          </Field>
+          <Field label="Клиент">
+            <select className={inputClass} value={client} onChange={(event) => setClient(event.target.value)}>
+              {clients.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Срок">
+              <input className={inputClass} value={due} onChange={(event) => setDue(event.target.value)} placeholder="Сегодня" />
+            </Field>
+            <Field label="Приоритет">
+              <select className={inputClass} value={priority} onChange={(event) => setPriority(event.target.value as TaskPriority)}>
+                <option value="low">низкий</option>
+                <option value="medium">средний</option>
+                <option value="high">высокий</option>
+                <option value="urgent">срочно</option>
+              </select>
+            </Field>
+          </div>
+          {error && <p className="text-sm text-red-300">{error}</p>}
+          <Button className="w-full" onClick={submit}><Plus size={18} />Создать задачу</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 const inputClass = "h-10 w-full rounded-md border border-nexus-border bg-white/[0.03] px-3 text-sm outline-none ring-nexus-red/60 placeholder:text-zinc-600 focus:ring-2";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -633,38 +857,86 @@ function DealRow({ deal }: { deal: (typeof deals)[number] }) {
   );
 }
 
-function TasksPage() {
+function TasksPage({ tasks, onMoveTask, onCreateTask }: { tasks: CrmTask[]; onMoveTask: (taskId: string, status: TaskStatus) => void; onCreateTask: () => void }) {
+  const [draggingTaskId, setDraggingTaskId] = useState("");
+
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
-      {(["todo", "in_progress", "done"] as const).map((status) => (
-        <Card key={status} className="p-5">
-          <h2 className="mb-4 text-lg font-bold">{taskStatusLabels[status]}</h2>
-          <div className="space-y-3">
-            {tasks.filter((task) => task.status === status).map((task) => (
-              <div key={task.id} className="rounded-md border border-nexus-border bg-white/[0.025] p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="font-bold">{task.title}</div>
-                  <Badge tone={task.priority === "urgent" ? "red" : task.priority === "high" ? "amber" : "default"}>{priorityLabels[task.priority]}</Badge>
-                </div>
-                <div className="text-sm text-nexus-muted">{task.client} · {task.due}</div>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-nexus-muted">Перетащите карточку между колонками или создайте новую задачу.</p>
+        <Button onClick={onCreateTask}><Plus size={18} />Новая задача</Button>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-3">
+        {(["todo", "in_progress", "done"] as const).map((status) => {
+          const statusTasks = tasks.filter((task) => task.status === status);
+          return (
+            <Card
+              key={status}
+              className={cn("min-h-64 p-5 transition", draggingTaskId && "border-red-500/45 bg-red-500/[0.03]")}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                const taskId = event.dataTransfer.getData("text/task-id") || draggingTaskId;
+                if (taskId) onMoveTask(taskId, status);
+                setDraggingTaskId("");
+              }}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold">{taskStatusLabels[status]}</h2>
+                <Badge>{statusTasks.length}</Badge>
               </div>
-            ))}
-          </div>
-        </Card>
-      ))}
+              <div className="space-y-3">
+                {statusTasks.map((task) => (
+                  <div
+                    key={task.id}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("text/task-id", task.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      setDraggingTaskId(task.id);
+                    }}
+                    onDragEnd={() => setDraggingTaskId("")}
+                    className={cn(
+                      "cursor-grab rounded-md border border-nexus-border bg-white/[0.025] p-4 transition active:cursor-grabbing",
+                      draggingTaskId === task.id && "scale-[0.99] border-red-500/60 opacity-70",
+                    )}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="font-bold">{task.title}</div>
+                      <Badge tone={task.priority === "urgent" ? "red" : task.priority === "high" ? "amber" : "default"}>{priorityLabels[task.priority]}</Badge>
+                    </div>
+                    <div className="text-sm text-nexus-muted">{task.client} · {task.due}</div>
+                  </div>
+                ))}
+                {!statusTasks.length && (
+                  <EmptyState title="Нет задач" detail="Перетащите сюда карточку или создайте новую задачу." compact />
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function AiPage() {
+function AiPage({ stats }: { stats: DashboardStats }) {
   const [message, setMessage] = useState("Какие сделки сейчас самые рискованные и что делать менеджеру?");
   const [chat, setChat] = useState([
     {
       role: "assistant",
-      text: "Привет. Я AI Ассистент NexusRM. Задайте вопрос по клиентам, сделкам, задачам или рискам.",
+      text: "Я вижу клиентов, сделки и задачи в CRM. Могу быстро собрать риски, next steps и прогноз по pipeline.",
     },
   ]);
   const [loading, setLoading] = useState(false);
+  const [model, setModel] = useState("CRM context");
+
+  const promptChips = [
+    "Какие сделки самые рискованные?",
+    "Что сегодня должен сделать менеджер?",
+    "Где теряется pipeline?",
+    "Составь план follow-up по клиентам в риске",
+  ];
 
   async function sendMessage() {
     const trimmed = message.trim();
@@ -681,12 +953,14 @@ function AiPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message ?? "AI сервис временно недоступен");
       setChat((items) => [...items, { role: "assistant", text: data.answer }]);
+      setModel(data.model ?? "CRM AI");
     } catch (error) {
+      setModel("local-crm-fallback");
       setChat((items) => [
         ...items,
         {
           role: "assistant",
-          text: `Не удалось получить ответ от AI. ${error instanceof Error ? error.message : "Проверьте backend и DEEPSEEK_API_KEY."}`,
+          text: makeLocalAiAnswer(trimmed, stats, error instanceof Error ? error.message : "AI сервис временно недоступен"),
         },
       ]);
     } finally {
@@ -694,38 +968,54 @@ function AiPage() {
     }
   }
 
-  function addDemoRecommendations() {
-    setChat((items) => [
-      ...items,
-      {
-        role: "assistant",
-        text: "Рекомендации: 1) RedForge обработать сегодня, потому что 14 дней нет активности. 2) VectorCloud довести до procurement-встречи. 3) Northstar квалифицировать по бюджету и срокам delivery-команды.",
-      },
-    ]);
+  function usePrompt(prompt: string) {
+    setMessage(prompt);
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
+    <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
       <Card className="p-6">
-        <Bot className="mb-4 text-nexus-red" size={34} />
-        <h2 className="text-2xl font-black">AI sales copilot</h2>
-        <p className="mt-2 text-nexus-muted">Демо-слой интеллекта для оценки сделок, поиска рисков, генерации писем и прогноза выручки.</p>
-        <Button className="mt-6" onClick={addDemoRecommendations}>
-          <RefreshCw size={18} />
-          Сгенерировать рекомендации
-        </Button>
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-bold text-red-100">
+              <Bot className="text-nexus-red" size={20} />
+              Nexus AI Copilot
+            </div>
+            <h2 className="text-2xl font-black">Контекст CRM</h2>
+          </div>
+          <Badge tone={model === "local-crm-fallback" ? "amber" : "green"}>{model}</Badge>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${stats.deals.length} сделок`} />
+          <MetricTile label="Forecast" value={money(Math.round(stats.weightedForecast))} detail="с учетом вероятности" />
+          <MetricTile label="Risk clients" value={stats.atRiskClients.length.toString()} detail={stats.atRiskClients[0]?.name ?? "нет критичных"} tone={stats.atRiskClients.length ? "red" : "green"} />
+          <MetricTile label="Urgent tasks" value={stats.urgentTasks.length.toString()} detail={stats.urgentTasks[0]?.title ?? "нет срочных"} tone={stats.urgentTasks.length ? "amber" : "green"} />
+        </div>
+        <div className="mt-5 space-y-2">
+          {promptChips.map((prompt) => (
+            <button key={prompt} onClick={() => usePrompt(prompt)} className="w-full rounded-md border border-nexus-border bg-white/[0.025] px-3 py-2 text-left text-sm text-zinc-300 transition hover:border-nexus-red/60 hover:text-white">
+              {prompt}
+            </button>
+          ))}
+        </div>
       </Card>
       <Card className="p-6">
-        <div className="mb-4 flex items-center gap-2">
-          <MessageCircle className="text-nexus-red" size={22} />
-          <h3 className="text-lg font-bold">Чат с AI Ассистентом</h3>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="text-nexus-red" size={22} />
+            <h3 className="text-lg font-bold">Чат с AI Ассистентом</h3>
+          </div>
+          <GhostButton className="h-9 px-3" onClick={() => setChat([{ role: "assistant", text: "Контекст очищен. Готов собрать новый CRM-разбор." }])}>
+            <RefreshCw size={16} />
+            Очистить
+          </GhostButton>
         </div>
-        <div className="mb-4 max-h-96 space-y-3 overflow-y-auto pr-1">
+        <div className="mb-4 max-h-[520px] min-h-[360px] space-y-3 overflow-y-auto rounded-md border border-nexus-border bg-black/25 p-3">
           {chat.map((item, index) => (
             <div
               key={`${item.role}-${index}`}
               className={cn(
-                "rounded-md border p-4 text-sm leading-6",
+                "rounded-md border p-4 text-sm leading-6 shadow-sm",
                 item.role === "user" ? "ml-8 border-zinc-700 bg-white/[0.04]" : "mr-8 border-red-500/20 bg-red-500/8",
               )}
             >
@@ -733,9 +1023,9 @@ function AiPage() {
               {item.text}
             </div>
           ))}
-          {loading ? <div className="rounded-md border border-nexus-border bg-white/[0.025] p-4 text-sm text-nexus-muted">AI думает...</div> : null}
+          {loading ? <div className="rounded-md border border-nexus-border bg-white/[0.025] p-4 text-sm text-nexus-muted">AI анализирует CRM-контекст...</div> : null}
         </div>
-        <div className="flex gap-2">
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
           <input
             value={message}
             onChange={(event) => setMessage(event.target.value)}
@@ -745,7 +1035,7 @@ function AiPage() {
             className="min-w-0 flex-1 rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60"
             placeholder="Спросите про клиентов, сделки или риски..."
           />
-          <Button onClick={() => void sendMessage()} disabled={loading}>
+          <Button className="px-5" onClick={() => void sendMessage()} disabled={loading}>
             <Send size={18} />
             Отправить
           </Button>
@@ -753,6 +1043,23 @@ function AiPage() {
       </Card>
     </div>
   );
+}
+
+function makeLocalAiAnswer(question: string, stats: DashboardStats, reason: string) {
+  const riskyClient = stats.atRiskClients[0];
+  const riskyDeal = stats.deals
+    .filter((deal) => deal.risk === "high" || deal.probability < 50)
+    .sort((a, b) => a.probability - b.probability)[0];
+  const urgentTask = stats.urgentTasks[0];
+
+  return [
+    `Локальный CRM-разбор по запросу "${question}". Внешний AI сейчас недоступен: ${reason}.`,
+    `Pipeline: ${money(stats.totalPipeline)}, weighted forecast: ${money(Math.round(stats.weightedForecast))}.`,
+    riskyDeal ? `Главная риск-сделка: ${riskyDeal.title} (${riskyDeal.client}), вероятность ${riskyDeal.probability}%.` : "Критичных сделок по вероятности не найдено.",
+    riskyClient ? `Клиент в фокусе: ${riskyClient.name}, health score ${riskyClient.healthScore}%.` : "Критичных клиентов по health score нет.",
+    urgentTask ? `Сегодня закрыть: ${urgentTask.title} для ${urgentTask.client}.` : "Срочных незакрытых задач нет.",
+    "Следующий шаг: назначить follow-up, обновить вероятность сделки после контакта и зафиксировать результат в задачах.",
+  ].join(" ");
 }
 
 function ApiDocsPage() {
@@ -901,6 +1208,10 @@ function SettingsPage({ session, request }: { session: Session; request: AuthedR
     }
   }
 
+  function setLocalSetting<K extends keyof WorkspaceSettings>(key: K, value: WorkspaceSettings[K]) {
+    setSettings((current) => ({ ...current, [key]: value }));
+  }
+
   const canEdit = session.user.role === "admin";
 
   return (
@@ -916,8 +1227,26 @@ function SettingsPage({ session, request }: { session: Session; request: AuthedR
         {canEdit ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm text-zinc-300">
+              Workspace
+              <input
+                value={settings.workspaceName}
+                onBlur={() => void updateSetting("workspaceName", settings.workspaceName)}
+                onChange={(event) => setLocalSetting("workspaceName", event.target.value)}
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60"
+              />
+            </label>
+            <label className="text-sm text-zinc-300">
+              Часовой пояс
+              <input
+                value={settings.timezone}
+                onBlur={() => void updateSetting("timezone", settings.timezone)}
+                onChange={(event) => setLocalSetting("timezone", event.target.value)}
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60"
+              />
+            </label>
+            <label className="text-sm text-zinc-300">
               Валюта
-              <select value={settings.currency} onChange={(event) => void updateSetting("currency", event.target.value)} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+              <select value={settings.currency} onChange={(event) => { const value = event.target.value; setLocalSetting("currency", value); void updateSetting("currency", value); }} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
                 <option value="RUB">RUB · рубли</option>
                 <option value="USD">USD · доллары</option>
                 <option value="EUR">EUR · евро</option>
@@ -925,7 +1254,7 @@ function SettingsPage({ session, request }: { session: Session; request: AuthedR
             </label>
             <label className="text-sm text-zinc-300">
               Роль по умолчанию
-              <select value={settings.defaultRole} onChange={(event) => void updateSetting("defaultRole", event.target.value as Role)} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+              <select value={settings.defaultRole} onChange={(event) => { const value = event.target.value as Role; setLocalSetting("defaultRole", value); void updateSetting("defaultRole", value); }} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
                 <option value="manager">manager</option>
                 <option value="viewer">viewer</option>
                 <option value="admin">admin</option>
@@ -1056,6 +1385,10 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
     }
   }
 
+  function setLocalAdminSetting<K extends keyof WorkspaceSettings>(key: K, value: WorkspaceSettings[K]) {
+    setSettings((current) => ({ ...current, [key]: value }));
+  }
+
   if (session.user.role !== "admin") {
     return <EmptyState title="Недостаточно прав" detail="Админ-панель доступна только пользователям с ролью admin." />;
   }
@@ -1152,10 +1485,52 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
         <Card className="p-6">
           <h2 className="mb-4 text-xl font-black">Системные настройки</h2>
           <div className="space-y-3 text-sm">
-            <InfoRow label="Рабочее пространство" value={settings.workspaceName} />
-            <InfoRow label="Часовой пояс" value={settings.timezone} />
-            <InfoRow label="Валюта" value={settings.currency} />
-            <InfoRow label="Роль по умолчанию" value={settings.defaultRole} />
+            <label className="block text-sm text-zinc-300">
+              Рабочее пространство
+              <input
+                value={settings.workspaceName}
+                onBlur={() => void updateSetting("workspaceName", settings.workspaceName)}
+                onChange={(event) => setLocalAdminSetting("workspaceName", event.target.value)}
+                disabled={savingSetting === "workspaceName"}
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+              />
+            </label>
+            <label className="block text-sm text-zinc-300">
+              Часовой пояс
+              <input
+                value={settings.timezone}
+                onBlur={() => void updateSetting("timezone", settings.timezone)}
+                onChange={(event) => setLocalAdminSetting("timezone", event.target.value)}
+                disabled={savingSetting === "timezone"}
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+              />
+            </label>
+            <label className="block text-sm text-zinc-300">
+              Валюта
+              <select
+                value={settings.currency}
+                onChange={(event) => { const value = event.target.value; setLocalAdminSetting("currency", value); void updateSetting("currency", value); }}
+                disabled={savingSetting === "currency"}
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+              >
+                <option value="RUB">RUB · рубли</option>
+                <option value="USD">USD · доллары</option>
+                <option value="EUR">EUR · евро</option>
+              </select>
+            </label>
+            <label className="block text-sm text-zinc-300">
+              Роль по умолчанию
+              <select
+                value={settings.defaultRole}
+                onChange={(event) => { const value = event.target.value as Role; setLocalAdminSetting("defaultRole", value); void updateSetting("defaultRole", value); }}
+                disabled={savingSetting === "defaultRole"}
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+              >
+                <option value="admin">admin</option>
+                <option value="manager">manager</option>
+                <option value="viewer">viewer</option>
+              </select>
+            </label>
             <Toggle label="AI" enabled={settings.aiEnabled} busy={savingSetting === "aiEnabled"} disabled={savingSetting === "aiEnabled"} onToggle={() => void updateSetting("aiEnabled", !settings.aiEnabled)} />
             <Toggle label="Публичный API" enabled={settings.publicApiEnabled} busy={savingSetting === "publicApiEnabled"} disabled={savingSetting === "publicApiEnabled"} onToggle={() => void updateSetting("publicApiEnabled", !settings.publicApiEnabled)} />
             <Toggle label="Регистрация" enabled={settings.registrationEnabled} busy={savingSetting === "registrationEnabled"} disabled={savingSetting === "registrationEnabled"} onToggle={() => void updateSetting("registrationEnabled", !settings.registrationEnabled)} />
