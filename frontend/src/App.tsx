@@ -20,10 +20,11 @@ import {
   Shield,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { activities, clients, conversionSeries, deals, revenueSeries, stages, tasks } from "./data/demo";
+import { activities, clients, conversionSeries, deals, revenueSeries, stages, tasks, type DealStage } from "./data/demo";
 import { cn, money } from "./lib/utils";
 import { Badge, Button, Card, GhostButton, Skeleton } from "./components/ui";
 
@@ -107,6 +108,15 @@ export function App() {
   const [page, setPage] = useState<Page>("Дашборд");
   const [selectedClient, setSelectedClient] = useState(clients[0]);
   const [loading, setLoading] = useState(false);
+  const [dealList, setDealList] = useState(deals);
+  const [newDealOpen, setNewDealOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  function createDeal(deal: (typeof deals)[number]) {
+    setDealList((prev) => [deal, ...prev]);
+    setNewDealOpen(false);
+    setPage("Сделки");
+  }
 
   const kpis = useMemo(
     () => [
@@ -120,6 +130,7 @@ export function App() {
   );
 
   function switchPage(next: Page) {
+    setMobileNavOpen(false);
     setLoading(true);
     setPage(next);
     window.setTimeout(() => setLoading(false), 420);
@@ -156,21 +167,7 @@ export function App() {
               <div className="text-xs text-nexus-muted">B2B система продаж</div>
             </div>
           </div>
-          <nav className="space-y-1">
-            {visibleNav.map((item) => (
-              <button
-                key={item.label}
-                onClick={() => switchPage(item.label)}
-                className={cn(
-                  "flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-zinc-400 transition hover:bg-white/[0.04] hover:text-white",
-                  page === item.label && "bg-nexus-red/14 text-white ring-1 ring-nexus-red/35",
-                )}
-              >
-                <item.icon size={18} />
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          <NavLinks items={visibleNav} page={page} onNavigate={switchPage} />
           <Card className="mt-8 p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <Sparkles className="text-nexus-red" size={17} />
@@ -181,32 +178,53 @@ export function App() {
           </Card>
         </aside>
 
-        <main className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 border-b border-nexus-border bg-nexus-bg/85 px-4 py-4 backdrop-blur md:px-7">
-            <div className="flex flex-wrap items-center gap-3">
-              <GhostButton className="lg:hidden">
-                <PanelLeft size={18} />
-              </GhostButton>
-              <div className="min-w-[220px] flex-1">
-                <div className="text-xs uppercase text-nexus-muted">Центр управления продажами</div>
-                <h1 className="text-2xl font-black tracking-normal md:text-3xl">{page}</h1>
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-40 lg:hidden">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
+            <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[82%] flex-col border-r border-nexus-border bg-[#0B0B0F] p-5 shadow-2xl">
+              <div className="mb-8 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <img className="size-10 rounded-lg shadow-red" src="/logo.png" alt="Логотип NexusRM" />
+                  <div>
+                    <div className="text-base font-black tracking-normal">NexusRM</div>
+                    <div className="text-xs text-nexus-muted">B2B система продаж</div>
+                  </div>
+                </div>
+                <GhostButton className="size-9 px-0" onClick={() => setMobileNavOpen(false)} aria-label="Закрыть меню">
+                  <X size={18} />
+                </GhostButton>
               </div>
-              <div className="relative hidden min-w-72 md:block">
-                <Search className="absolute left-3 top-2.5 text-zinc-500" size={18} />
-                <input className="h-10 w-full rounded-md border border-nexus-border bg-white/[0.03] pl-10 pr-3 text-sm outline-none ring-nexus-red/60 placeholder:text-zinc-600 focus:ring-2" placeholder="Поиск клиентов, сделок, задач..." />
-              </div>
-              <GhostButton>
-                <Bell size={18} />
-              </GhostButton>
-              <Button onClick={() => switchPage("Сделки")}>
-                <Plus size={18} />
-                Новая сделка
-              </Button>
-              <div className="hidden rounded-md border border-nexus-border bg-white/[0.03] px-3 py-2 text-right text-xs md:block">
+              <NavLinks items={visibleNav} page={page} onNavigate={switchPage} />
+              <div className="mt-auto rounded-md border border-nexus-border bg-white/[0.03] px-3 py-3 text-xs">
                 <div className="font-bold text-white">{session.user.name}</div>
                 <div className="text-nexus-muted">{session.user.role}</div>
               </div>
-              <GhostButton onClick={logout}>
+            </aside>
+          </div>
+        )}
+
+        <main className="min-w-0 flex-1">
+          <header className="sticky top-0 z-20 border-b border-nexus-border bg-nexus-bg/85 px-4 py-3 backdrop-blur md:px-7 md:py-4">
+            <div className="flex items-center gap-3">
+              <GhostButton className="size-10 shrink-0 px-0 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Открыть меню">
+                <PanelLeft size={18} />
+              </GhostButton>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs uppercase text-nexus-muted">Центр управления продажами</div>
+                <h1 className="truncate text-xl font-black tracking-normal md:text-3xl">{page}</h1>
+              </div>
+              <div className="relative hidden min-w-72 xl:block">
+                <Search className="absolute left-3 top-2.5 text-zinc-500" size={18} />
+                <input className="h-10 w-full rounded-md border border-nexus-border bg-white/[0.03] pl-10 pr-3 text-sm outline-none ring-nexus-red/60 placeholder:text-zinc-600 focus:ring-2" placeholder="Поиск клиентов, сделок, задач..." />
+              </div>
+              <GhostButton className="hidden size-10 shrink-0 px-0 sm:inline-flex" aria-label="Уведомления">
+                <Bell size={18} />
+              </GhostButton>
+              <Button className="shrink-0 px-3 md:px-4" onClick={() => setNewDealOpen(true)}>
+                <Plus size={18} />
+                <span className="hidden sm:inline">Новая сделка</span>
+              </Button>
+              <GhostButton className="size-10 shrink-0 px-0" onClick={logout} aria-label="Выйти">
                 <LogOut size={18} />
               </GhostButton>
             </div>
@@ -217,7 +235,7 @@ export function App() {
             {!loading && page === "Дашборд" && <Dashboard kpis={kpis} />}
             {!loading && page === "Клиенты" && <ClientsPage onSelect={(client) => { setSelectedClient(client); switchPage("Профиль клиента"); }} />}
             {!loading && page === "Профиль клиента" && <ClientProfile client={selectedClient} />}
-            {!loading && page === "Сделки" && <DealsPage />}
+            {!loading && page === "Сделки" && <DealsPage deals={dealList} />}
             {!loading && page === "Задачи" && <TasksPage />}
             {!loading && page === "AI Ассистент" && <AiPage />}
             {!loading && page === "API Документация" && <ApiDocsPage />}
@@ -226,7 +244,28 @@ export function App() {
           </div>
         </main>
       </div>
+      {newDealOpen && <NewDealModal onClose={() => setNewDealOpen(false)} onCreate={createDeal} />}
     </div>
+  );
+}
+
+function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; onNavigate: (next: Page) => void }) {
+  return (
+    <nav className="space-y-1">
+      {items.map((item) => (
+        <button
+          key={item.label}
+          onClick={() => onNavigate(item.label)}
+          className={cn(
+            "flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-zinc-400 transition hover:bg-white/[0.04] hover:text-white",
+            page === item.label && "bg-nexus-red/14 text-white ring-1 ring-nexus-red/35",
+          )}
+        >
+          <item.icon size={18} />
+          {item.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -432,11 +471,11 @@ function ClientProfile({ client }: { client: (typeof clients)[number] }) {
   );
 }
 
-function DealsPage() {
+function DealsPage({ deals: dealsProp }: { deals: typeof deals }) {
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-6">
       {stages.map((stage) => {
-        const stageDeals = deals.filter((deal) => deal.stage === stage);
+        const stageDeals = dealsProp.filter((deal) => deal.stage === stage);
         return (
           <Card key={stage} className="min-h-80 p-3">
             <div className="mb-3 flex items-center justify-between">
@@ -464,6 +503,88 @@ function DealCard({ deal }: { deal: (typeof deals)[number] }) {
         <Badge tone={deal.risk === "high" ? "red" : deal.risk === "low" ? "green" : "amber"}>{deal.probability}%</Badge>
       </div>
     </div>
+  );
+}
+
+function NewDealModal({ onClose, onCreate }: { onClose: () => void; onCreate: (deal: (typeof deals)[number]) => void }) {
+  const [title, setTitle] = useState("");
+  const [client, setClient] = useState(clients[0].name);
+  const [stage, setStage] = useState<DealStage>(stages[0]);
+  const [amount, setAmount] = useState("");
+  const [closeDate, setCloseDate] = useState("");
+  const [probability, setProbability] = useState("50");
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (!title.trim()) {
+      setError("Укажите название сделки");
+      return;
+    }
+    const amountNum = Number(amount) || 0;
+    const probabilityNum = Math.min(100, Math.max(0, Number(probability) || 0));
+    onCreate({
+      id: `d${Date.now()}`,
+      title: title.trim(),
+      client,
+      stage,
+      amount: amountNum,
+      closeDate: closeDate.trim() || "Не указано",
+      probability: probabilityNum,
+      aiScore: Math.round(probabilityNum * 0.9),
+      risk: probabilityNum >= 60 ? "low" : probabilityNum >= 35 ? "medium" : "high",
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+      <Card className="w-full max-w-lg p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Новая сделка</h2>
+          <GhostButton className="h-8 px-3" onClick={onClose}>Закрыть</GhostButton>
+        </div>
+        <div className="space-y-3">
+          <Field label="Название">
+            <input className={inputClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например, Внедрение CRM" />
+          </Field>
+          <Field label="Клиент">
+            <select className={inputClass} value={client} onChange={(event) => setClient(event.target.value)}>
+              {clients.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Стадия">
+              <select className={inputClass} value={stage} onChange={(event) => setStage(event.target.value as DealStage)}>
+                {stages.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </Field>
+            <Field label="Сумма, $">
+              <input className={inputClass} type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="42000" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Дата закрытия">
+              <input className={inputClass} value={closeDate} onChange={(event) => setCloseDate(event.target.value)} placeholder="28 июня" />
+            </Field>
+            <Field label="Вероятность, %">
+              <input className={inputClass} type="number" min="0" max="100" value={probability} onChange={(event) => setProbability(event.target.value)} />
+            </Field>
+          </div>
+          {error && <p className="text-sm text-red-300">{error}</p>}
+          <Button className="w-full" onClick={submit}><Plus size={18} />Создать сделку</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+const inputClass = "h-10 w-full rounded-md border border-nexus-border bg-white/[0.03] px-3 text-sm outline-none ring-nexus-red/60 placeholder:text-zinc-600 focus:ring-2";
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs uppercase text-nexus-muted">{label}</span>
+      {children}
+    </label>
   );
 }
 
