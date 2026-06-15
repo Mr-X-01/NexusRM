@@ -2,7 +2,7 @@
   "name": "nexusrm",
   "version": "1.0.0",
   "private": true,
-  "description": "NexusRM premium CRM SaaS for B2B IT, consulting, digital agency and outsourcing teams.",
+  "description": "NexusRM - профессиональная CRM-система для B2B IT, консалтинга, digital-агентств и outsourcing-команд.",
   "scripts": {
     "dev": "npm run dev --workspace backend & npm run dev --workspace frontend",
     "build": "npm run build --workspace backend && npm run build --workspace frontend",

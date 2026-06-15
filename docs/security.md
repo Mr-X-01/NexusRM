@@ -1,22 +1,22 @@
-# NexusRM Security Notes
+# Заметки по безопасности NexusRM
 
-Implemented controls:
+Реализованные меры:
 
-- bcrypt password hashing
-- JWT access tokens and hashed refresh tokens
-- role-based guards for admin/manager/viewer permissions
-- class-validator DTO validation and whitelist mode
-- Helmet security headers
-- CORS restricted through `CORS_ORIGIN`
-- rate limiting through Nest throttler
-- Prisma query layer for SQL injection resistance
-- API key authentication for public integration endpoints
-- audit logs for sensitive mutations
-- `.env` excluded from Git; `.env.example` contains only placeholder secrets
+- хеширование паролей через bcrypt;
+- JWT access tokens и хешированные refresh tokens;
+- role-based guards для прав `admin`, `manager`, `viewer`;
+- DTO validation через class-validator и whitelist mode;
+- security headers через Helmet;
+- CORS ограничивается переменной `CORS_ORIGIN`;
+- rate limiting через Nest guard;
+- слой Prisma снижает риск SQL injection;
+- API key authentication для публичных integration endpoints;
+- audit logs для чувствительных изменений;
+- `.env` исключен из Git, а `.env.example` содержит только placeholder-секреты.
 
-Deployment reminders:
+Памятка для production:
 
-- Rotate all JWT secrets before public deployment.
-- Replace demo passwords and demo API key.
-- Put the backend behind HTTPS and a reverse proxy.
-- Restrict public API keys by owner, scope and rotation policy before production use.
+- заменить демо-пароли перед публичной эксплуатацией;
+- заменить демо API key;
+- держать backend за HTTPS и reverse proxy;
+- ограничить публичные API-ключи по владельцу, scope и политике ротации.

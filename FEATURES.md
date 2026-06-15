@@ -24,8 +24,8 @@
 ## AI sales mock
 
 - Deal score для оценки вероятности сделки.
-- Client health для оценки состояния клиента.
-- Revenue forecast для прогноза выручки.
+- Client health score для оценки состояния клиента.
+- Прогноз выручки.
 - Follow-up generation для следующего шага менеджера.
 - Risk detection для подсветки проблемных клиентов и сделок.
 
@@ -49,7 +49,7 @@
 - Темный premium SaaS-дизайн.
 - Красно-черная визуальная айдентика NexusRM.
 - Адаптивная верстка под desktop и mobile.
-- Dashboard command center.
+- Дашборд как центр управления продажами.
 - Карточки KPI.
 - Pipeline и CRM-виджеты.
 - Блок публичного API.
@@ -63,7 +63,7 @@
 - ValidationPipe с whitelist и запретом лишних полей.
 - Helmet security headers.
 - CORS через переменную `CORS_ORIGIN`.
-- Модульная структура доменов CRM, Auth, AI, Public API и Admin.
+- Модульная структура доменов CRM, авторизации, AI, публичного API и админ-панели.
 
 ## DevOps и production
 
@@ -80,8 +80,8 @@
 
 ## Демо-аккаунты
 
-- Admin: `admin@nexusrm.ai` / `admin123`.
-- Manager: `manager@nexusrm.ai` / `manager123`.
+- Админ: `admin@nexusrm.ai` / `admin123`.
+- Менеджер: `manager@nexusrm.ai` / `manager123`.
 
 ## Что можно развивать дальше
 

@@ -1,0 +1,26 @@
+<svg width="1000" height="360" viewBox="0 0 1000 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1000" height="360" rx="26" fill="#0B0B0F"/>
+  <rect x="1" y="1" width="998" height="358" rx="25" stroke="#2A2A32"/>
+  <text x="40" y="58" fill="white" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="900">График продаж и pipeline</text>
+  <text x="40" y="88" fill="#A1A1AA" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15">Демо-метрики для презентации NexusRM</text>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <rect x="64" y="236" width="88" height="58" rx="8" fill="#E50914"/>
+    <rect x="188" y="198" width="88" height="96" rx="8" fill="#E50914"/>
+    <rect x="312" y="154" width="88" height="140" rx="8" fill="#E50914"/>
+    <rect x="436" y="176" width="88" height="118" rx="8" fill="#E50914"/>
+    <rect x="560" y="124" width="88" height="170" rx="8" fill="#E50914"/>
+    <rect x="684" y="102" width="88" height="192" rx="8" fill="#E50914"/>
+    <text x="72" y="320" fill="#D4D4D8" font-size="13">Янв</text>
+    <text x="196" y="320" fill="#D4D4D8" font-size="13">Фев</text>
+    <text x="322" y="320" fill="#D4D4D8" font-size="13">Мар</text>
+    <text x="446" y="320" fill="#D4D4D8" font-size="13">Апр</text>
+    <text x="570" y="320" fill="#D4D4D8" font-size="13">Май</text>
+    <text x="694" y="320" fill="#D4D4D8" font-size="13">Июн</text>
+  </g>
+  <rect x="824" y="112" width="126" height="42" rx="21" fill="#17171D" stroke="#2A2A32"/>
+  <text x="850" y="139" fill="white" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="800">31%</text>
+  <text x="824" y="180" fill="#A1A1AA" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">конверсия</text>
+  <rect x="824" y="212" width="126" height="42" rx="21" fill="#E50914"/>
+  <text x="850" y="239" fill="white" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="800">$42k</text>
+  <text x="824" y="280" fill="#A1A1AA" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">выручка</text>
+</svg>

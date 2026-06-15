@@ -1,11 +1,11 @@
-# NexusRM Hackathon Demo Script
+# Сценарий демо NexusRM для хакатона
 
-1. Login with `admin@nexusrm.ai / admin123`.
-2. Show Dashboard: KPIs, AI alerts, revenue forecast, conversion funnel and activity feed.
-3. Open Clients and select RedForge Studio to show at-risk health scoring.
-4. Open Deals to show the Kanban pipeline and deal probability signals.
-5. Open Tasks to show operational follow-up work linked to clients.
-6. Open AI Assistant and read generated sales recommendations.
-7. Open API Documentation and show public integration endpoints.
-8. Open Swagger at `http://localhost:4000/api/docs`.
-9. Mention security: JWT, refresh tokens, RBAC, bcrypt, validation, rate limits, API keys and audit logs.
+1. Войти под `admin@nexusrm.ai / admin123`.
+2. Показать дашборд: KPI, AI-уведомления, прогноз выручки, воронку конверсии и ленту активностей.
+3. Открыть клиентов и выбрать RedForge Studio, чтобы показать health score и риск продления.
+4. Открыть сделки, показать Kanban pipeline и сигналы вероятности закрытия.
+5. Открыть задачи, показать операционный follow-up, привязанный к клиентам.
+6. Открыть AI Ассистента и зачитать рекомендации по продажам.
+7. Открыть API Документацию и показать публичные integration endpoints.
+8. Открыть Swagger по адресу `http://localhost:4000/api/docs`.
+9. Отдельно проговорить безопасность: JWT, refresh tokens, RBAC, bcrypt, validation, rate limits, API keys и audit logs.

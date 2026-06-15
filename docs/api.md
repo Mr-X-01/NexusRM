@@ -1,22 +1,22 @@
 # NexusRM API
 
-Swagger is available at:
+Swagger доступен по адресу:
 
 ```text
 http://localhost:4000/api/docs
 ```
 
-Primary route groups:
+Основные группы маршрутов:
 
-- `/api/auth`: register, login, refresh, logout, current user
-- `/api/clients`: client list, profile, create, update, delete
-- `/api/deals`: deal list, pipeline summary, create, update, delete
-- `/api/tasks`: task list, create, update, delete
-- `/api/ai`: insights, deal score, follow-up generator
-- `/api/public`: API-key protected integration endpoints
-- `/api/admin`: users and audit logs
+- `/api/auth`: регистрация, вход, обновление токена, выход, текущий пользователь.
+- `/api/clients`: список клиентов, профиль, создание, обновление, удаление.
+- `/api/deals`: список сделок, сводка pipeline, создание, обновление, удаление.
+- `/api/tasks`: список задач, создание, обновление, удаление.
+- `/api/ai`: инсайты, оценка сделки, генератор follow-up.
+- `/api/public`: endpoints интеграций, защищенные API-ключом.
+- `/api/admin`: пользователи и audit logs.
 
-Public API demo key after seed:
+Демо-ключ публичного API после seed:
 
 ```text
 nxrm_demo_public_key

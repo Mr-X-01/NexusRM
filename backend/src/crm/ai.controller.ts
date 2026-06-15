@@ -15,15 +15,15 @@ export class AiController {
     return {
       revenueForecast: "$42,000",
       alerts: [
-        "Client is at risk because no activity for 14 days",
-        "Deal has 72% closing probability",
-        "Recommended next step: send follow-up today",
+        "Клиент в зоне риска: нет активности 14 дней",
+        "Вероятность закрытия сделки: 72%",
+        "Рекомендованный шаг: отправить письмо сегодня",
       ],
       dealScores: deals.map((deal) => ({
         dealId: deal.id,
         title: deal.title,
         score: Math.min(95, Math.round(Number(deal.probability) * 0.7 + Number(deal.aiScore) * 0.3)),
-        message: `${deal.title} has ${deal.probability}% closing probability`,
+        message: `${deal.title}: вероятность закрытия ${deal.probability}%`,
       })),
       clientHealth: clients.map((client) => ({
         clientId: client.id,
@@ -43,9 +43,9 @@ export class AiController {
         dealId: id,
         clientId: deal.clientId,
         type: "deal_score",
-        title: "AI Deal Score",
+        title: "AI score сделки",
         score,
-        message: `Deal has ${score}% closing probability based on stage, amount, close date and client health.`,
+        message: `Вероятность закрытия ${score}% на основе стадии, суммы, даты закрытия и health score клиента.`,
       },
     });
   }
@@ -54,8 +54,8 @@ export class AiController {
   async followUp(@Param("id") id: string) {
     const client = await this.prisma.client.findUniqueOrThrow({ where: { id } });
     return {
-      subject: `Next step for ${client.name}`,
-      body: `Hi ${client.name} team, following up on our last conversation. Recommended next step: send a concise value recap and propose a decision meeting today.`,
+      subject: `Следующий шаг для ${client.name}`,
+      body: `Команда ${client.name}, возвращаемся к последнему разговору. Рекомендованный шаг: отправить краткое резюме ценности и предложить decision meeting сегодня.`,
     };
   }
 }

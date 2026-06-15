@@ -11,13 +11,13 @@ async function main() {
   const admin = await prisma.user.upsert({
     where: { email: "admin@nexusrm.ai" },
     update: {},
-    create: { email: "admin@nexusrm.ai", name: "Nexus Admin", role: Role.admin, passwordHash: adminPassword },
+    create: { email: "admin@nexusrm.ai", name: "Администратор Nexus", role: Role.admin, passwordHash: adminPassword },
   });
 
   const manager = await prisma.user.upsert({
     where: { email: "manager@nexusrm.ai" },
     update: {},
-    create: { email: "manager@nexusrm.ai", name: "Maya Chen", role: Role.manager, passwordHash: managerPassword },
+    create: { email: "manager@nexusrm.ai", name: "Мария Чен", role: Role.manager, passwordHash: managerPassword },
   });
 
   await prisma.auditLog.deleteMany();
@@ -31,8 +31,8 @@ async function main() {
 
   const clients = [
     { name: "VectorCloud", industry: "B2B SaaS", status: ClientStatus.active, tags: ["enterprise", "cloud"], healthScore: 88 },
-    { name: "RedForge Studio", industry: "Digital Agency", status: ClientStatus.at_risk, tags: ["agency", "retainer"], healthScore: 42 },
-    { name: "Northstar Outsourcing", industry: "IT Outsourcing", status: ClientStatus.new, tags: ["nearshore", "pipeline"], healthScore: 71 },
+    { name: "RedForge Studio", industry: "Digital-агентство", status: ClientStatus.at_risk, tags: ["agency", "retainer"], healthScore: 42 },
+    { name: "Northstar Outsourcing", industry: "IT outsourcing", status: ClientStatus.new, tags: ["nearshore", "pipeline"], healthScore: 71 },
   ];
 
   for (const item of clients) {
@@ -44,8 +44,8 @@ async function main() {
 
     await prisma.contact.createMany({
       data: [
-        { clientId: client.id, name: "Alex Morgan", title: "COO", email: `alex@${client.name.toLowerCase().replace(/\W/g, "")}.com`, isPrimary: true },
-        { clientId: client.id, name: "Rina Patel", title: "Head of Delivery", email: `rina@${client.name.toLowerCase().replace(/\W/g, "")}.com` },
+        { clientId: client.id, name: "Алекс Морган", title: "COO", email: `alex@${client.name.toLowerCase().replace(/\W/g, "")}.com`, isPrimary: true },
+        { clientId: client.id, name: "Рина Патель", title: "Head of Delivery", email: `rina@${client.name.toLowerCase().replace(/\W/g, "")}.com` },
       ],
       skipDuplicates: true,
     });
@@ -53,27 +53,27 @@ async function main() {
 
   await prisma.deal.createMany({
     data: [
-      { title: "Cloud migration program", clientId: "vectorcloud", stage: DealStage.Negotiation, amount: 42000, closeDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 18), probability: 72, aiScore: 81, riskLevel: RiskLevel.low },
-      { title: "Retainer expansion", clientId: "redforge-studio", stage: DealStage.Proposal, amount: 18500, closeDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 9), probability: 48, aiScore: 55, riskLevel: RiskLevel.high },
-      { title: "Dedicated delivery squad", clientId: "northstar-outsourcing", stage: DealStage.Contacted, amount: 64000, closeDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 31), probability: 37, aiScore: 49, riskLevel: RiskLevel.medium },
+      { title: "Программа cloud-миграции", clientId: "vectorcloud", stage: DealStage.Negotiation, amount: 42000, closeDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 18), probability: 72, aiScore: 81, riskLevel: RiskLevel.low },
+      { title: "Расширение ретейнера", clientId: "redforge-studio", stage: DealStage.Proposal, amount: 18500, closeDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 9), probability: 48, aiScore: 55, riskLevel: RiskLevel.high },
+      { title: "Выделенная delivery-команда", clientId: "northstar-outsourcing", stage: DealStage.Contacted, amount: 64000, closeDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 31), probability: 37, aiScore: 49, riskLevel: RiskLevel.medium },
     ],
     skipDuplicates: true,
   });
 
   await prisma.task.createMany({
     data: [
-      { title: "Send follow-up to RedForge", priority: TaskPriority.urgent, status: TaskStatus.todo, dueDate: new Date(), assigneeId: manager.id, clientId: "redforge-studio" },
-      { title: "Prepare technical proposal", priority: TaskPriority.high, status: TaskStatus.in_progress, dueDate: new Date(Date.now() + 86400000), assigneeId: manager.id, clientId: "vectorcloud" },
-      { title: "Qualify procurement process", priority: TaskPriority.medium, status: TaskStatus.todo, dueDate: new Date(Date.now() + 172800000), assigneeId: manager.id, clientId: "northstar-outsourcing" },
+      { title: "Отправить письмо в RedForge", priority: TaskPriority.urgent, status: TaskStatus.todo, dueDate: new Date(), assigneeId: manager.id, clientId: "redforge-studio" },
+      { title: "Подготовить техническое предложение", priority: TaskPriority.high, status: TaskStatus.in_progress, dueDate: new Date(Date.now() + 86400000), assigneeId: manager.id, clientId: "vectorcloud" },
+      { title: "Уточнить procurement-процесс", priority: TaskPriority.medium, status: TaskStatus.todo, dueDate: new Date(Date.now() + 172800000), assigneeId: manager.id, clientId: "northstar-outsourcing" },
     ],
     skipDuplicates: true,
   });
 
   await prisma.activity.createMany({
     data: [
-      { type: "call", summary: "Discovery call completed with Northstar.", clientId: "northstar-outsourcing", userId: manager.id },
-      { type: "risk", summary: "RedForge has no activity for 14 days.", clientId: "redforge-studio", userId: manager.id },
-      { type: "proposal", summary: "VectorCloud requested procurement timeline.", clientId: "vectorcloud", userId: manager.id },
+      { type: "call", summary: "Discovery-звонок с Northstar завершен.", clientId: "northstar-outsourcing", userId: manager.id },
+      { type: "risk", summary: "У RedForge нет активности 14 дней.", clientId: "redforge-studio", userId: manager.id },
+      { type: "proposal", summary: "VectorCloud запросил procurement timeline.", clientId: "vectorcloud", userId: manager.id },
     ],
   });
 
@@ -82,7 +82,7 @@ async function main() {
     where: { keyHash: createHash("sha256").update(demoApiKey).digest("hex") },
     update: {},
     create: {
-      name: "Demo public integration key",
+      name: "Демо-ключ публичной интеграции",
       keyHash: createHash("sha256").update(demoApiKey).digest("hex"),
       prefix: "nxrm_demo",
       ownerId: admin.id,

@@ -19,7 +19,7 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("NexusRM API")
-    .setDescription("REST API for NexusRM CRM, AI insights and public integrations.")
+    .setDescription("REST API для CRM NexusRM, AI-инсайтов и публичных интеграций.")
     .setVersion("1.0")
     .addBearerAuth()
     .addApiKey({ type: "apiKey", name: "x-api-key", in: "header" }, "public-api-key")

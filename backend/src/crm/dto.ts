@@ -7,7 +7,7 @@ export class RegisterDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: "Nexus Admin" })
+  @ApiProperty({ example: "Администратор Nexus" })
   @IsString()
   name: string;
 
@@ -71,7 +71,7 @@ export class CreateClientDto {
 export class UpdateClientDto extends CreateClientDto {}
 
 export class CreateDealDto {
-  @ApiProperty({ example: "Cloud migration program" })
+  @ApiProperty({ example: "Программа cloud-миграции" })
   @IsString()
   title: string;
 
@@ -103,7 +103,7 @@ export class CreateDealDto {
 export class UpdateDealDto extends CreateDealDto {}
 
 export class CreateTaskDto {
-  @ApiProperty({ example: "Send follow-up today" })
+  @ApiProperty({ example: "Отправить письмо сегодня" })
   @IsString()
   title: string;
 
@@ -153,7 +153,7 @@ export class PublicLeadDto {
   @IsEmail()
   email: string;
 
-  @ApiPropertyOptional({ example: "Need CRM for delivery team" })
+  @ApiPropertyOptional({ example: "Нужна CRM для delivery-команды" })
   @IsOptional()
   @IsString()
   message?: string;

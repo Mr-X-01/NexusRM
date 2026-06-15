@@ -1,0 +1,23 @@
+<svg width="1000" height="360" viewBox="0 0 1000 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1000" height="360" rx="26" fill="#050505"/>
+  <rect x="1" y="1" width="998" height="358" rx="25" stroke="#2A2A32"/>
+  <text x="40" y="58" fill="white" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="900">Деплой одной командой</text>
+  <text x="40" y="88" fill="#A1A1AA" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15">Домен, Docker, база, backend, frontend и SSL на одном VPS</text>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" font-weight="800">
+    <rect x="60" y="144" width="142" height="76" rx="18" fill="#111116" stroke="#2A2A32"/>
+    <text x="91" y="188" fill="white">Домен</text>
+    <path d="M218 182H302" stroke="#E50914" stroke-width="4" stroke-linecap="round"/>
+    <rect x="318" y="144" width="142" height="76" rx="18" fill="#111116" stroke="#2A2A32"/>
+    <text x="358" y="188" fill="white">Caddy</text>
+    <path d="M476 182H560" stroke="#E50914" stroke-width="4" stroke-linecap="round"/>
+    <rect x="576" y="104" width="142" height="76" rx="18" fill="#111116" stroke="#2A2A32"/>
+    <text x="609" y="148" fill="white">Frontend</text>
+    <rect x="576" y="208" width="142" height="76" rx="18" fill="#111116" stroke="#2A2A32"/>
+    <text x="613" y="252" fill="white">Backend</text>
+    <path d="M734 246H818" stroke="#E50914" stroke-width="4" stroke-linecap="round"/>
+    <rect x="834" y="208" width="142" height="76" rx="18" fill="#111116" stroke="#2A2A32"/>
+    <text x="861" y="252" fill="white">PostgreSQL</text>
+  </g>
+  <rect x="318" y="244" width="142" height="44" rx="22" fill="#E50914"/>
+  <text x="349" y="272" fill="white" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" font-weight="900">HTTPS SSL</text>
+</svg>

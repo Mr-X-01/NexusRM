@@ -18,14 +18,14 @@ export class PublicApiController {
     const client = await this.prisma.client.create({
       data: {
         name: dto.company,
-        industry: "Imported Lead",
+        industry: "Импортированный лид",
         status: "new",
         tags: ["public-api"],
-        contacts: { create: { name: "Inbound lead", email: dto.email, isPrimary: true } },
-        activities: { create: { type: "lead", summary: dto.message ?? "Lead submitted through public API" } },
+        contacts: { create: { name: "Входящий лид", email: dto.email, isPrimary: true } },
+        activities: { create: { type: "lead", summary: dto.message ?? "Лид отправлен через публичный API" } },
       },
     });
-    return { id: client.id, status: "accepted" };
+    return { id: client.id, status: "accepted", message: "Лид принят" };
   }
 
   @Get("clients")

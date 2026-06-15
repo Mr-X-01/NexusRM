@@ -25,7 +25,7 @@ export class RateLimitGuard implements CanActivate {
 
     bucket.count += 1;
     if (bucket.count > this.limit) {
-      throw new HttpException("Rate limit exceeded", HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException("Превышен лимит запросов", HttpStatus.TOO_MANY_REQUESTS);
     }
 
     return true;

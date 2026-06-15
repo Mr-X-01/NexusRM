@@ -1,19 +1,19 @@
-# NexusRM Architecture
+# Архитектура NexusRM
 
-NexusRM is organized as a two-app workspace:
+NexusRM организован как workspace из двух приложений:
 
-- `backend/`: NestJS REST API with Prisma and PostgreSQL
-- `frontend/`: React + Vite app with premium black-red CRM UI
+- `backend/`: NestJS REST API с Prisma и PostgreSQL.
+- `frontend/`: React + Vite приложение с premium CRM-интерфейсом в красно-черной айдентике.
 
-The backend is split by product surfaces: auth, clients, deals, tasks, AI, public API and admin. Prisma owns persistence, model constraints and database access. Swagger exposes the complete REST surface.
+Backend разделен по продуктовым поверхностям: auth, clients, deals, tasks, AI, public API и admin. Prisma отвечает за хранение данных, ограничения модели и доступ к базе. Swagger показывает полный REST-контур.
 
-The frontend is a product demo shell with code-native navigation, charts, Kanban pipeline, AI recommendations, client profile, public API docs and admin views. Demo data mirrors the seed data so the app is useful before API wiring is expanded screen by screen.
+Frontend работает как демонстрационная оболочка продукта: навигация, графики, Kanban pipeline, AI-рекомендации, профиль клиента, публичная API-документация и админ-панель. Демо-данные в интерфейсе совпадают по смыслу с seed-данными backend, поэтому проект можно показывать сразу после установки.
 
-## Data Flow
+## Поток данных
 
-1. User authenticates through `/api/auth/login`.
-2. Protected CRM routes require Bearer JWT access tokens.
-3. Refresh tokens are hashed before storage.
-4. Public integration routes use `x-api-key`.
-5. Mutating business actions create audit logs.
-6. AI endpoints compute deterministic demo scores and recommendations from CRM data.
+1. Пользователь входит через `/api/auth/login`.
+2. Защищенные CRM-маршруты требуют Bearer JWT access token.
+3. Refresh tokens хешируются перед сохранением.
+4. Публичные integration routes используют `x-api-key`.
+5. Мутирующие бизнес-действия создают audit logs.
+6. AI endpoints считают детерминированные демо-score и рекомендации на основе CRM-данных.
