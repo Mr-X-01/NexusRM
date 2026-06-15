@@ -56,6 +56,14 @@ curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server
 nxrm_demo_public_key
 ```
 
+Если нужен живой AI-чат через DeepSeek, передайте ключ как переменную окружения при повторном запуске установщика:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server.sh | sudo env DEEPSEEK_API_KEY="ваш_ключ" bash -s -- crm.example.com admin@example.com
+```
+
+Ключ будет сохранен только в `/opt/nexusrm/.env` на сервере и не попадет в репозиторий.
+
 ## Как работает деплой
 
 ![Схема деплоя NexusRM](docs/assets/deploy-map.png)
@@ -72,6 +80,7 @@ nxrm_demo_public_key
 - добавляет демо-пользователей и демо-CRM данные, если база пустая;
 - запускает backend, frontend и Caddy;
 - выпускает HTTPS-сертификат Let's Encrypt через Caddy;
+- проверяет, что backend и Swagger `/api/docs` реально отвечают;
 - открывает `80/443` в `ufw`, если firewall установлен.
 
 Повторный запуск той же команды работает как обновление. Секреты и пароль базы сохраняются, а seed запускается только если в базе еще нет пользователей.
@@ -99,8 +108,10 @@ nxrm_demo_public_key
 - JWT access/refresh авторизация;
 - Kanban pipeline сделок;
 - AI sales mock: оценка сделок, health score, прогноз и поиск рисков;
+- AI чат через DeepSeek при наличии `DEEPSEEK_API_KEY`;
 - публичный API для интеграций с ключом `x-api-key`;
 - Swagger/OpenAPI документация;
+- встроенная API-документация в интерфейсе, если Swagger временно недоступен;
 - адаптивный premium dark UI для демо и презентации.
 
 ## Локальный запуск

@@ -10,9 +10,12 @@ import {
   LayoutDashboard,
   Lock,
   LogOut,
+  MessageCircle,
   PanelLeft,
   Plus,
+  RefreshCw,
   Search,
+  Send,
   Settings,
   Shield,
   Sparkles,
@@ -114,7 +117,7 @@ export function App() {
               AI монитор рисков
             </div>
             <p className="text-sm leading-6 text-nexus-muted">RedForge в зоне риска: активности не было 14 дней.</p>
-            <Button className="mt-4 h-9 w-full">Сгенерировать письмо</Button>
+            <Button className="mt-4 h-9 w-full" onClick={() => switchPage("AI Ассистент")}>Сгенерировать письмо</Button>
           </Card>
         </aside>
 
@@ -135,7 +138,7 @@ export function App() {
               <GhostButton>
                 <Bell size={18} />
               </GhostButton>
-              <Button>
+              <Button onClick={() => switchPage("Сделки")}>
                 <Plus size={18} />
                 Новая сделка
               </Button>
@@ -412,46 +415,153 @@ function TasksPage() {
 }
 
 function AiPage() {
+  const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+  const [message, setMessage] = useState("Какие сделки сейчас самые рискованные и что делать менеджеру?");
+  const [chat, setChat] = useState([
+    {
+      role: "assistant",
+      text: "Привет. Я AI Ассистент NexusRM. Задайте вопрос по клиентам, сделкам, задачам или рискам.",
+    },
+  ]);
+  const [loading, setLoading] = useState(false);
+
+  async function sendMessage() {
+    const trimmed = message.trim();
+    if (!trimmed || loading) return;
+    setChat((items) => [...items, { role: "user", text: trimmed }]);
+    setMessage("");
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/api/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: trimmed }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message ?? "AI сервис временно недоступен");
+      setChat((items) => [...items, { role: "assistant", text: data.answer }]);
+    } catch (error) {
+      setChat((items) => [
+        ...items,
+        {
+          role: "assistant",
+          text: `Не удалось получить ответ от AI. ${error instanceof Error ? error.message : "Проверьте backend и DEEPSEEK_API_KEY."}`,
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function addDemoRecommendations() {
+    setChat((items) => [
+      ...items,
+      {
+        role: "assistant",
+        text: "Рекомендации: 1) RedForge обработать сегодня, потому что 14 дней нет активности. 2) VectorCloud довести до procurement-встречи. 3) Northstar квалифицировать по бюджету и срокам delivery-команды.",
+      },
+    ]);
+  }
+
   return (
     <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
       <Card className="p-6">
         <Bot className="mb-4 text-nexus-red" size={34} />
         <h2 className="text-2xl font-black">AI sales copilot</h2>
         <p className="mt-2 text-nexus-muted">Демо-слой интеллекта для оценки сделок, поиска рисков, генерации писем и прогноза выручки.</p>
-        <Button className="mt-6">Сгенерировать рекомендации</Button>
+        <Button className="mt-6" onClick={addDemoRecommendations}>
+          <RefreshCw size={18} />
+          Сгенерировать рекомендации
+        </Button>
       </Card>
       <Card className="p-6">
-        <h3 className="mb-4 text-lg font-bold">Рекомендации</h3>
-        {[
-          "Вероятность закрытия сделки: 72%.",
-          "Клиент в зоне риска: нет активности 14 дней.",
-          "Рекомендованный шаг: отправить письмо сегодня.",
-          "Прогноз выручки на месяц: $42,000.",
-        ].map((item) => (
-          <div key={item} className="mb-3 rounded-md border border-red-500/20 bg-red-500/8 p-4 text-sm">
-            {item}
-          </div>
-        ))}
+        <div className="mb-4 flex items-center gap-2">
+          <MessageCircle className="text-nexus-red" size={22} />
+          <h3 className="text-lg font-bold">Чат с AI Ассистентом</h3>
+        </div>
+        <div className="mb-4 max-h-96 space-y-3 overflow-y-auto pr-1">
+          {chat.map((item, index) => (
+            <div
+              key={`${item.role}-${index}`}
+              className={cn(
+                "rounded-md border p-4 text-sm leading-6",
+                item.role === "user" ? "ml-8 border-zinc-700 bg-white/[0.04]" : "mr-8 border-red-500/20 bg-red-500/8",
+              )}
+            >
+              <div className="mb-1 text-xs font-bold uppercase text-nexus-muted">{item.role === "user" ? "Вы" : "Nexus AI"}</div>
+              {item.text}
+            </div>
+          ))}
+          {loading ? <div className="rounded-md border border-nexus-border bg-white/[0.025] p-4 text-sm text-nexus-muted">AI думает...</div> : null}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void sendMessage();
+            }}
+            className="min-w-0 flex-1 rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60"
+            placeholder="Спросите про клиентов, сделки или риски..."
+          />
+          <Button onClick={() => void sendMessage()} disabled={loading}>
+            <Send size={18} />
+            Отправить
+          </Button>
+        </div>
       </Card>
     </div>
   );
 }
 
 function ApiDocsPage() {
+  const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+  const endpoints = [
+    ["POST", "/api/ai/chat", "AI чат по CRM-контексту"],
+    ["GET", "/api/ai/insights", "AI-инсайты, риски и score"],
+    ["POST", "/api/public/leads", "Создать входящий лид"],
+    ["GET", "/api/public/clients", "Получить список клиентов"],
+    ["POST", "/api/public/tasks", "Создать задачу"],
+    ["GET", "/api/public/deals", "Получить сделки"],
+    ["POST", "/api/public/webhooks", "Зарегистрировать webhook"],
+  ];
+
   return (
-    <Card className="p-6">
-      <Code2 className="mb-4 text-nexus-red" size={32} />
-      <h2 className="text-2xl font-black">Публичный CRM API</h2>
-      <p className="mt-2 max-w-3xl text-nexus-muted">Внешние системы могут создавать лиды, получать клиентов, создавать задачи, смотреть сделки и регистрировать webhooks через API key.</p>
-      <div className="mt-6 grid gap-3 md:grid-cols-2">
-        {["POST /api/public/leads", "GET /api/public/clients", "POST /api/public/tasks", "GET /api/public/deals", "POST /api/public/webhooks"].map((endpoint) => (
-          <div key={endpoint} className="rounded-md border border-nexus-border bg-black/35 p-4 font-mono text-sm text-red-100">{endpoint}</div>
-        ))}
-      </div>
-      <a className="mt-6 inline-flex text-sm font-bold text-nexus-red" href={`${import.meta.env.VITE_API_URL ?? "http://localhost:4000"}/api/docs`} target="_blank" rel="noreferrer">
-        Открыть Swagger документацию
-      </a>
-    </Card>
+    <div className="space-y-5">
+      <Card className="p-6">
+        <Code2 className="mb-4 text-nexus-red" size={32} />
+        <h2 className="text-2xl font-black">Документация API</h2>
+        <p className="mt-2 max-w-3xl text-nexus-muted">
+          Эта страница доступна внутри frontend даже если Swagger временно недоступен. Swagger должен открываться по адресу `/api/docs`, когда backend запущен.
+        </p>
+        <a className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-nexus-red" href={`${apiBase}/api/docs`} target="_blank" rel="noreferrer">
+          Открыть Swagger документацию
+          <ChevronRight size={16} />
+        </a>
+      </Card>
+
+      <Card className="p-6">
+        <h3 className="mb-4 text-lg font-bold">Рабочие endpoints</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          {endpoints.map(([method, path, description]) => (
+            <div key={path} className="rounded-md border border-nexus-border bg-black/35 p-4">
+              <div className="font-mono text-sm text-red-100">{method} {path}</div>
+              <div className="mt-2 text-sm text-nexus-muted">{description}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h3 className="mb-3 text-lg font-bold">Если `/api/docs` показывает 502</h3>
+        <p className="text-sm leading-6 text-nexus-muted">
+          Это означает, что Cloudflare видит домен, но origin/backend не отвечает. Повторите серверную команду установки после последнего обновления репозитория и проверьте логи backend/Caddy.
+        </p>
+        <pre className="mt-4 overflow-x-auto rounded-md border border-nexus-border bg-black/50 p-4 text-xs text-red-100">{`cd /opt/nexusrm
+docker compose -f docker-compose.prod.yml --env-file .env ps
+docker compose -f docker-compose.prod.yml --env-file .env logs -f backend caddy`}</pre>
+      </Card>
+    </div>
   );
 }
 

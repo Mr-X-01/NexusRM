@@ -168,3 +168,10 @@ export class PublicWebhookDto {
   @IsString()
   event: string;
 }
+
+export class AiChatDto {
+  @ApiProperty({ example: "Какие сделки сейчас самые рискованные?" })
+  @IsString()
+  @MinLength(2)
+  message: string;
+}

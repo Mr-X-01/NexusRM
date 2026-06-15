@@ -1,12 +1,18 @@
-import { Controller, Get, Param, Post } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Post, ServiceUnavailableException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { Public } from "../security/public.decorator";
 import { PrismaService } from "../shared/prisma.service";
+import { AiChatDto } from "./dto";
 
 @ApiTags("ai")
 @ApiBearerAuth()
 @Controller("ai")
 export class AiController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get("insights")
   async insights() {
@@ -56,6 +62,77 @@ export class AiController {
     return {
       subject: `Следующий шаг для ${client.name}`,
       body: `Команда ${client.name}, возвращаемся к последнему разговору. Рекомендованный шаг: отправить краткое резюме ценности и предложить decision meeting сегодня.`,
+    };
+  }
+
+  @Public()
+  @Post("chat")
+  async chat(@Body() dto: AiChatDto) {
+    const apiKey = this.config.get<string>("DEEPSEEK_API_KEY");
+    if (!apiKey) {
+      throw new ServiceUnavailableException("DeepSeek API key не настроен. Добавьте DEEPSEEK_API_KEY в .env на сервере и перезапустите backend.");
+    }
+
+    const clients = await this.prisma.client.findMany({
+      include: { deals: true, tasks: true },
+      take: 8,
+    });
+    const context = clients.map((client) => ({
+      name: client.name,
+      status: client.status,
+      healthScore: client.healthScore,
+      deals: client.deals.map((deal) => ({
+        title: deal.title,
+        stage: deal.stage,
+        amount: deal.amount,
+        probability: deal.probability,
+        riskLevel: deal.riskLevel,
+      })),
+      tasks: client.tasks.map((task) => ({
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+      })),
+    }));
+
+    const baseUrl = this.config.get<string>("DEEPSEEK_BASE_URL") ?? "https://api.deepseek.com";
+    const model = this.config.get<string>("DEEPSEEK_MODEL") ?? "deepseek-v4-pro";
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Ты AI ассистент CRM NexusRM. Отвечай по-русски, кратко, делово и с опорой на CRM-контекст. Давай конкретные sales-рекомендации.",
+          },
+          {
+            role: "user",
+            content: `CRM-контекст: ${JSON.stringify(context)}\n\nВопрос: ${dto.message}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 700,
+        stream: false,
+        thinking: { type: "enabled" },
+        reasoning_effort: "medium",
+      }),
+    });
+
+    if (!response.ok) {
+      const details = await response.text();
+      throw new BadRequestException(`DeepSeek API вернул ошибку ${response.status}: ${details.slice(0, 300)}`);
+    }
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    return {
+      answer: payload.choices?.[0]?.message?.content ?? "DeepSeek не вернул текст ответа.",
+      model,
     };
   }
 }

@@ -5,7 +5,8 @@
 3. Открыть клиентов и выбрать RedForge Studio, чтобы показать health score и риск продления.
 4. Открыть сделки, показать Kanban pipeline и сигналы вероятности закрытия.
 5. Открыть задачи, показать операционный follow-up, привязанный к клиентам.
-6. Открыть AI Ассистента и зачитать рекомендации по продажам.
-7. Открыть API Документацию и показать публичные integration endpoints.
-8. Открыть Swagger по адресу `http://localhost:4000/api/docs`.
-9. Отдельно проговорить безопасность: JWT, refresh tokens, RBAC, bcrypt, validation, rate limits, API keys и audit logs.
+6. Открыть AI Ассистента, задать вопрос в чате и показать ответ DeepSeek.
+7. Если DeepSeek ключ не настроен, показать понятное сообщение об ошибке и объяснить переменную `DEEPSEEK_API_KEY`.
+8. Открыть API Документацию внутри интерфейса и показать публичные integration endpoints.
+9. Открыть Swagger по адресу `http://localhost:4000/api/docs` или `https://ваш-домен/api/docs`.
+10. Отдельно проговорить безопасность: JWT, refresh tokens, RBAC, bcrypt, validation, rate limits, API keys и audit logs.

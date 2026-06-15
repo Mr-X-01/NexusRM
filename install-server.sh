@@ -133,12 +133,18 @@ POSTGRES_PASSWORD="$(get_env_value POSTGRES_PASSWORD || true)"
 POSTGRES_DB="$(get_env_value POSTGRES_DB || true)"
 JWT_ACCESS_SECRET="$(get_env_value JWT_ACCESS_SECRET || true)"
 JWT_REFRESH_SECRET="$(get_env_value JWT_REFRESH_SECRET || true)"
+EXISTING_DEEPSEEK_API_KEY="$(get_env_value DEEPSEEK_API_KEY || true)"
+EXISTING_DEEPSEEK_BASE_URL="$(get_env_value DEEPSEEK_BASE_URL || true)"
+EXISTING_DEEPSEEK_MODEL="$(get_env_value DEEPSEEK_MODEL || true)"
 
 POSTGRES_USER="${POSTGRES_USER:-nexusrm}"
 POSTGRES_DB="${POSTGRES_DB:-nexusrm}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(openssl rand -hex 18)}"
 JWT_ACCESS_SECRET="${JWT_ACCESS_SECRET:-$(openssl rand -hex 32)}"
 JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET:-$(openssl rand -hex 32)}"
+DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-$EXISTING_DEEPSEEK_API_KEY}"
+DEEPSEEK_BASE_URL="${DEEPSEEK_BASE_URL:-${EXISTING_DEEPSEEK_BASE_URL:-https://api.deepseek.com}}"
+DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-${EXISTING_DEEPSEEK_MODEL:-deepseek-v4-pro}}"
 
 if [[ -f "$ENV_FILE" ]]; then
   cp "$ENV_FILE" "$ENV_FILE.backup.$(date +%Y%m%d%H%M%S)"
@@ -160,6 +166,9 @@ JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET
 ACCESS_TOKEN_TTL=15m
 REFRESH_TOKEN_TTL=7d
 CORS_ORIGIN=https://$DOMAIN
+DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
+DEEPSEEK_BASE_URL=$DEEPSEEK_BASE_URL
+DEEPSEEK_MODEL=$DEEPSEEK_MODEL
 
 VITE_API_URL=https://$DOMAIN
 EOF
@@ -193,6 +202,16 @@ fi
 log "Запускаю NexusRM с HTTPS"
 docker compose -f docker-compose.prod.yml --env-file .env up -d
 
+log "Проверяю backend и Swagger"
+set +e
+docker compose -f docker-compose.prod.yml --env-file .env exec -T backend node -e 'fetch("http://127.0.0.1:4000/api/docs").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1));' < /dev/null
+DOCS_CHECK_EXIT=$?
+set -e
+if [[ "$DOCS_CHECK_EXIT" -ne 0 ]]; then
+  docker compose -f docker-compose.prod.yml --env-file .env logs --tail=120 backend caddy
+  fail "Swagger /api/docs не отвечает. Проверьте логи выше."
+fi
+
 log "Статус деплоя"
 docker compose -f docker-compose.prod.yml --env-file .env ps
 
@@ -212,6 +231,9 @@ Swagger:    https://$DOMAIN/api/docs
 
 Директория проекта:
   $APP_DIR
+
+DeepSeek:
+  ${DEEPSEEK_API_KEY:+ключ настроен}${DEEPSEEK_API_KEY:-ключ не настроен}
 
 Команда обновления:
   curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server.sh | sudo bash -s -- $DOMAIN $ACME_EMAIL
