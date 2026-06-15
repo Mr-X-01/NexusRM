@@ -204,10 +204,19 @@ log "Запускаю NexusRM с HTTPS"
 docker compose -f docker-compose.prod.yml --env-file .env up -d
 
 log "Проверяю backend и Swagger"
-set +e
-docker compose -f docker-compose.prod.yml --env-file .env exec -T backend node -e 'fetch("http://127.0.0.1:4000/api/docs").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1));' < /dev/null
-DOCS_CHECK_EXIT=$?
-set -e
+DOCS_CHECK_EXIT=1
+for attempt in $(seq 1 30); do
+  set +e
+  docker compose -f docker-compose.prod.yml --env-file .env exec -T backend node -e 'fetch("http://127.0.0.1:4000/api/docs").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1));' < /dev/null
+  DOCS_CHECK_EXIT=$?
+  set -e
+  if [[ "$DOCS_CHECK_EXIT" -eq 0 ]]; then
+    log "Backend и Swagger отвечают (попытка $attempt)"
+    break
+  fi
+  log "Backend ещё не готов, жду (попытка $attempt/30)"
+  sleep 3
+done
 if [[ "$DOCS_CHECK_EXIT" -ne 0 ]]; then
   docker compose -f docker-compose.prod.yml --env-file .env logs --tail=120 backend caddy
   fail "Swagger /api/docs не отвечает. Проверьте логи выше."
