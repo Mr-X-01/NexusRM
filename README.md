@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="Логотип NexusRM" width="520">
+  <img src="docs/assets/logo.png" alt="Логотип NexusRM" width="520">
 </p>
 
 <p align="center">
@@ -7,15 +7,10 @@
 </p>
 
 <p align="center">
-  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-22-111116?style=for-the-badge&logo=node.js&logoColor=white">
-  <img alt="NestJS" src="https://img.shields.io/badge/NestJS-11-E50914?style=for-the-badge&logo=nestjs&logoColor=white">
-  <img alt="React" src="https://img.shields.io/badge/React-18-111116?style=for-the-badge&logo=react&logoColor=61DAFB">
-  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-16-111116?style=for-the-badge&logo=postgresql&logoColor=white">
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-111116?style=for-the-badge&logo=docker&logoColor=white">
-  <img alt="HTTPS" src="https://img.shields.io/badge/HTTPS-Caddy-E50914?style=for-the-badge&logo=caddy&logoColor=white">
+  <b>Node.js 22</b> · <b>NestJS 11</b> · <b>React 18</b> · <b>PostgreSQL 16</b> · <b>Docker Compose</b> · <b>Caddy HTTPS</b>
 </p>
 
-![Превью интерфейса NexusRM](docs/assets/readme-hero.svg)
+![Превью интерфейса NexusRM](docs/assets/readme-hero.png)
 
 ## Что такое NexusRM
 
@@ -63,7 +58,7 @@ nxrm_demo_public_key
 
 ## Как работает деплой
 
-![Схема деплоя NexusRM](docs/assets/deploy-map.svg)
+![Схема деплоя NexusRM](docs/assets/deploy-map.png)
 
 `install-server.sh` автоматически:
 
@@ -83,7 +78,7 @@ nxrm_demo_public_key
 
 ## График демо-метрик
 
-![График pipeline и выручки NexusRM](docs/assets/pipeline-chart.svg)
+![График pipeline и выручки NexusRM](docs/assets/pipeline-chart.png)
 
 | Метрика | Значение | Что показывает |
 | --- | ---: | --- |
@@ -168,7 +163,7 @@ curl -I http://crm.example.com
 nexusrm/
   backend/                 NestJS REST API, Prisma schema, seed data
   frontend/                React + Vite SaaS interface
-  frontend/public/logo.svg Логотип приложения и favicon
+  frontend/public/logo.png Логотип приложения и favicon
   deploy/Caddyfile         HTTPS reverse proxy для production
   docs/                    Архитектура, API, безопасность, демо-сценарий
   docs/assets/             Логотип и изображения README

@@ -87,7 +87,7 @@ export function App() {
       <div className="flex min-h-screen">
         <aside className="hidden w-72 shrink-0 border-r border-nexus-border bg-black/45 p-5 lg:block">
           <div className="mb-8 flex items-center gap-3">
-            <img className="size-11 rounded-lg shadow-red" src="/logo.svg" alt="Логотип NexusRM" />
+            <img className="size-11 rounded-lg shadow-red" src="/logo.png" alt="Логотип NexusRM" />
             <div>
               <div className="text-lg font-black tracking-normal">NexusRM</div>
               <div className="text-xs text-nexus-muted">B2B система продаж</div>
@@ -168,7 +168,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
     <div className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_20%_10%,rgba(255,45,45,0.22),transparent_30%),linear-gradient(135deg,#050505,#0B0B0F)] p-5 text-white">
       <Card className="w-full max-w-md p-7">
         <div className="mb-7 flex items-center gap-3">
-          <img className="size-12 rounded-lg" src="/logo.svg" alt="Логотип NexusRM" />
+          <img className="size-12 rounded-lg" src="/logo.png" alt="Логотип NexusRM" />
           <div>
             <h1 className="text-2xl font-black">NexusRM</h1>
             <p className="text-sm text-nexus-muted">Защищенный центр управления CRM</p>
