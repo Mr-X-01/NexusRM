@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  manager
+  viewer
+}
+
+enum ClientStatus {
+  new
+  active
+  at_risk
+  lost
+}
+
+enum DealStage {
+  Lead
+  Contacted
+  Proposal
+  Negotiation
+  Won
+  Lost
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+}
+
+model User {
+  id             String     @id @default(cuid())
+  email          String     @unique
+  name           String
+  passwordHash   String
+  role           Role       @default(manager)
+  refreshHash    String?
+  createdAt      DateTime   @default(now())
+  clients        Client[]   @relation("ClientManager")
+  assignedTasks  Task[]     @relation("TaskAssignee")
+  notes          Note[]
+  activities     Activity[]
+  apiKeys        ApiKey[]
+  auditLogs      AuditLog[]
+}
+
+model Client {
+  id          String       @id @default(cuid())
+  name        String
+  industry    String
+  website     String?
+  status      ClientStatus @default(new)
+  tags        String[]     @default([])
+  healthScore Int          @default(75)
+  managerId   String?
+  manager     User?        @relation("ClientManager", fields: [managerId], references: [id])
+  contacts    Contact[]
+  deals       Deal[]
+  tasks       Task[]
+  notes       Note[]
+  activities  Activity[]
+  insights    AiInsight[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Contact {
+  id        String  @id @default(cuid())
+  clientId  String
+  client    Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name      String
+  email     String
+  phone     String?
+  title     String?
+  isPrimary Boolean @default(false)
+}
+
+model Deal {
+  id          String     @id @default(cuid())
+  title       String
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  stage       DealStage  @default(Lead)
+  amount      Decimal    @db.Decimal(12, 2)
+  closeDate   DateTime
+  probability Int        @default(50)
+  aiScore     Int        @default(50)
+  riskLevel   RiskLevel  @default(medium)
+  tasks       Task[]
+  insights    AiInsight[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  priority    TaskPriority @default(medium)
+  status      TaskStatus   @default(todo)
+  dueDate     DateTime
+  assigneeId  String?
+  assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  clientId    String?
+  client      Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  dealId      String?
+  deal        Deal?        @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  body      String
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  type      String
+  summary   String
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+}
+
+model AiInsight {
+  id        String   @id @default(cuid())
+  type      String
+  title     String
+  message   String
+  score     Int?
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  isActive   Boolean   @default(true)
+  ownerId    String?
+  owner      User?     @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  webhooks   Webhook[]
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  url       String
+  event     String
+  apiKeyId  String?
+  apiKey    ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  payload   Json?
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+}
