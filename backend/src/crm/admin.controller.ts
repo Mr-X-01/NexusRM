@@ -1,16 +1,17 @@
 import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Prisma, Role } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import { CurrentUser } from "../security/current-user.decorator";
 import { Roles } from "../security/roles.decorator";
 import { PrismaService } from "../shared/prisma.service";
-import { CreateApiKeyDto, UpdateUserDto, WorkspaceSettingsDto } from "./dto";
+import { CreateApiKeyDto, CreateUserDto, UpdateUserDto, WorkspaceSettingsDto } from "./dto";
 
 const defaultWorkspaceSettings = {
   workspaceName: "NexusRM",
   timezone: "Europe/Moscow",
-  currency: "USD",
+  currency: "RUB",
   aiEnabled: true,
   publicApiEnabled: true,
   registrationEnabled: false,
@@ -60,14 +61,47 @@ export class AdminController {
     });
   }
 
+  @Post("users")
+  @ApiOperation({ summary: "Создать пользователя рабочего пространства" })
+  async createUser(@Body() dto: CreateUserDto, @CurrentUser() user: CurrentUser) {
+    const record = await this.prisma.user.create({
+      data: {
+        email: dto.email,
+        name: dto.name,
+        passwordHash: await bcrypt.hash(dto.password, 12),
+        role: dto.role ?? Role.manager,
+        status: dto.status ?? "active",
+        title: dto.title,
+        department: dto.department,
+        phone: dto.phone,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        status: true,
+        title: true,
+        department: true,
+        phone: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+    });
+    await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "admin.user.create", entity: "user", entityId: record.id } });
+    return record;
+  }
+
   @Patch("users/:id")
   @ApiOperation({ summary: "Обновить роль, статус и профиль пользователя" })
-  updateUser(@Param("id") id: string, @Body() dto: UpdateUserDto) {
-    return this.prisma.user.update({
+  async updateUser(@Param("id") id: string, @Body() dto: UpdateUserDto, @CurrentUser() user: CurrentUser) {
+    const record = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: { id: true, email: true, name: true, role: true, status: true, title: true, department: true, phone: true, lastLoginAt: true },
     });
+    await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "admin.user.update", entity: "user", entityId: id } });
+    return record;
   }
 
   @Get("settings")

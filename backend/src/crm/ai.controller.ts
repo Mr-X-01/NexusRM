@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Post } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { Prisma } from "@prisma/client";
 import { Public } from "../security/public.decorator";
 import { PrismaService } from "../shared/prisma.service";
 import { AiChatDto } from "./dto";
@@ -68,11 +69,6 @@ export class AiController {
   @Public()
   @Post("chat")
   async chat(@Body() dto: AiChatDto) {
-    const apiKey = this.config.get<string>("DEEPSEEK_API_KEY");
-    if (!apiKey) {
-      throw new ServiceUnavailableException("DeepSeek API key не настроен. Добавьте DEEPSEEK_API_KEY в .env на сервере и перезапустите backend.");
-    }
-
     const clients = await this.prisma.client.findMany({
       include: { deals: true, tasks: true },
       take: 8,
@@ -94,6 +90,14 @@ export class AiController {
         priority: task.priority,
       })),
     }));
+    const fallback = () => ({
+      answer: this.localCrmAnswer(dto.message, context),
+      model: "local-crm-fallback",
+    });
+    const apiKey = this.config.get<string>("DEEPSEEK_API_KEY");
+    if (!apiKey) {
+      return fallback();
+    }
 
     const baseUrl = this.config.get<string>("DEEPSEEK_BASE_URL") ?? "https://api.deepseek.com";
     const model = this.config.get<string>("DEEPSEEK_MODEL") ?? "deepseek-v4-pro";
@@ -122,8 +126,14 @@ export class AiController {
         thinking: { type: "enabled" },
         reasoning_effort: "medium",
       }),
-    });
+    }).catch(() => null);
 
+    if (!response) {
+      return fallback();
+    }
+    if (response.status === 401 || response.status === 403) {
+      return fallback();
+    }
     if (!response.ok) {
       const details = await response.text();
       throw new BadRequestException(`DeepSeek API вернул ошибку ${response.status}: ${details.slice(0, 300)}`);
@@ -134,5 +144,34 @@ export class AiController {
       answer: payload.choices?.[0]?.message?.content ?? "DeepSeek не вернул текст ответа.",
       model,
     };
+  }
+
+  private localCrmAnswer(
+    question: string,
+    context: {
+      name: string;
+      status: string;
+      healthScore: number;
+      deals: { title: string; stage: string; amount: Prisma.Decimal; probability: number; riskLevel: string }[];
+      tasks: { title: string; status: string; priority: string }[];
+    }[],
+  ) {
+    const riskyClients = context.filter((client) => client.healthScore < 75);
+    const riskyDeals = context.flatMap((client) =>
+      client.deals
+        .filter((deal) => deal.riskLevel === "high" || deal.probability < 60)
+        .map((deal) => `${deal.title} (${client.name}, ${deal.probability}%, риск ${deal.riskLevel})`),
+    );
+    const nextClient = riskyClients[0] ?? context[0];
+    const focus = riskyDeals[0] ?? (nextClient ? `${nextClient.name}: проверьте ближайшие задачи и следующий контакт` : "Добавьте клиентов и сделки, чтобы получить точные рекомендации");
+
+    return [
+      "AI работает в локальном CRM-режиме, потому что внешний DeepSeek ключ недоступен или отклонён провайдером.",
+      `По запросу "${question}" главный фокус: ${focus}.`,
+      riskyClients.length
+        ? `Клиенты с риском: ${riskyClients.map((client) => `${client.name} (${client.healthScore})`).join(", ")}.`
+        : "Клиенты с критичным health score не найдены.",
+      "Рекомендация: назначьте ответственного, создайте follow-up на сегодня и обновите вероятность сделки после контакта.",
+    ].join(" ");
   }
 }

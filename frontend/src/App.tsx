@@ -43,9 +43,19 @@ type Session = {
   accessToken: string;
   refreshToken: string;
 };
+type AuthedRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 const sessionKey = "nexusrm.session";
+const defaultWorkspaceSettings: WorkspaceSettings = {
+  workspaceName: "NexusRM",
+  timezone: "Europe/Moscow",
+  currency: "RUB",
+  aiEnabled: true,
+  publicApiEnabled: true,
+  registrationEnabled: false,
+  defaultRole: "manager",
+};
 
 async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(options.headers);
@@ -61,6 +71,10 @@ async function apiRequest<T>(path: string, options: RequestInit = {}, token?: st
     throw new Error(message);
   }
   return data as T;
+}
+
+function isExpiredTokenError(error: unknown) {
+  return error instanceof Error && /invalid or expired access token|missing access token/i.test(error.message);
 }
 
 const nav: { label: Page; icon: typeof LayoutDashboard }[] = [
@@ -144,6 +158,22 @@ export function App() {
     setSession(next);
     localStorage.setItem(sessionKey, JSON.stringify(next));
     setPage("Дашборд");
+  }
+
+  async function authenticatedRequest<T>(path: string, options: RequestInit = {}) {
+    if (!session) throw new Error("Сессия не найдена");
+    try {
+      return await apiRequest<T>(path, options, session.accessToken);
+    } catch (error) {
+      if (!isExpiredTokenError(error)) throw error;
+      const refreshed = await apiRequest<Session>("/api/auth/refresh", {
+        method: "POST",
+        body: JSON.stringify({ refreshToken: session.refreshToken }),
+      });
+      setSession(refreshed);
+      localStorage.setItem(sessionKey, JSON.stringify(refreshed));
+      return apiRequest<T>(path, options, refreshed.accessToken);
+    }
   }
 
   function logout() {
@@ -239,8 +269,8 @@ export function App() {
             {!loading && page === "Задачи" && <TasksPage />}
             {!loading && page === "AI Ассистент" && <AiPage />}
             {!loading && page === "API Документация" && <ApiDocsPage />}
-            {!loading && page === "Настройки" && <SettingsPage session={session} />}
-            {!loading && page === "Админ-панель" && <AdminPage session={session} />}
+            {!loading && page === "Настройки" && <SettingsPage session={session} request={authenticatedRequest} />}
+            {!loading && page === "Админ-панель" && <AdminPage session={session} request={authenticatedRequest} />}
           </div>
         </main>
       </div>
@@ -342,7 +372,7 @@ function Dashboard({ kpis }: { kpis: { label: string; value: string; delta: stri
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold">Прогноз выручки</h2>
-              <p className="text-sm text-nexus-muted">AI-прогноз на месяц: $42,000</p>
+              <p className="text-sm text-nexus-muted">AI-прогноз на месяц: {money(42000)}</p>
             </div>
             <Badge tone="red">AI прогноз</Badge>
           </div>
@@ -822,27 +852,87 @@ type ApiKeyInfo = {
   lastUsedAt?: string;
   owner?: { email: string; name: string } | null;
 };
+type UserForm = {
+  email: string;
+  name: string;
+  password: string;
+  role: Role;
+  status: "active" | "invited" | "disabled";
+  title: string;
+  department: string;
+  phone: string;
+};
+const emptyUserForm: UserForm = {
+  email: "",
+  name: "",
+  password: "manager123",
+  role: "manager",
+  status: "active",
+  title: "",
+  department: "",
+  phone: "",
+};
 
-function SettingsPage({ session }: { session: Session }) {
-  const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
+function SettingsPage({ session, request }: { session: Session; request: AuthedRequest }) {
+  const [settings, setSettings] = useState<WorkspaceSettings>(defaultWorkspaceSettings);
   const [error, setError] = useState("");
+  const [busyKey, setBusyKey] = useState<keyof WorkspaceSettings | "">("");
 
   useEffect(() => {
     if (session.user.role !== "admin") return;
-    void apiRequest<WorkspaceSettings>("/api/admin/settings", {}, session.accessToken)
+    void request<WorkspaceSettings>("/api/admin/settings")
       .then(setSettings)
       .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить настройки"));
-  }, [session.accessToken, session.user.role]);
+  }, [request, session.user.role]);
+
+  async function updateSetting<K extends keyof WorkspaceSettings>(key: K, value: WorkspaceSettings[K]) {
+    setError("");
+    setBusyKey(key);
+    try {
+      const next = await request<WorkspaceSettings>("/api/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ [key]: value }),
+      });
+      setSettings(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить настройки");
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  const canEdit = session.user.role === "admin";
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Card className="p-6">
         <h2 className="mb-4 text-xl font-black">Настройки пространства</h2>
         {error ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{error}</div> : null}
-        <Toggle label="Темная тема по умолчанию" enabled />
-        <Toggle label="AI уведомления о рисках" enabled={settings?.aiEnabled ?? true} />
-        <Toggle label="Доступ к публичному API" enabled={settings?.publicApiEnabled ?? true} />
-        <Toggle label="Самостоятельная регистрация" enabled={settings?.registrationEnabled ?? false} />
+        {!canEdit ? <div className="mb-4 rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm text-nexus-muted">Изменять системные настройки может только администратор.</div> : null}
+        <Toggle label="Темная тема по умолчанию" enabled disabled />
+        <Toggle label="AI уведомления о рисках" enabled={settings.aiEnabled} disabled={!canEdit || busyKey === "aiEnabled"} busy={busyKey === "aiEnabled"} onToggle={() => void updateSetting("aiEnabled", !settings.aiEnabled)} />
+        <Toggle label="Доступ к публичному API" enabled={settings.publicApiEnabled} disabled={!canEdit || busyKey === "publicApiEnabled"} busy={busyKey === "publicApiEnabled"} onToggle={() => void updateSetting("publicApiEnabled", !settings.publicApiEnabled)} />
+        <Toggle label="Самостоятельная регистрация" enabled={settings.registrationEnabled} disabled={!canEdit || busyKey === "registrationEnabled"} busy={busyKey === "registrationEnabled"} onToggle={() => void updateSetting("registrationEnabled", !settings.registrationEnabled)} />
+        {canEdit ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm text-zinc-300">
+              Валюта
+              <select value={settings.currency} onChange={(event) => void updateSetting("currency", event.target.value)} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+                <option value="RUB">RUB · рубли</option>
+                <option value="USD">USD · доллары</option>
+                <option value="EUR">EUR · евро</option>
+              </select>
+            </label>
+            <label className="text-sm text-zinc-300">
+              Роль по умолчанию
+              <select value={settings.defaultRole} onChange={(event) => void updateSetting("defaultRole", event.target.value as Role)} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+                <option value="manager">manager</option>
+                <option value="viewer">viewer</option>
+                <option value="admin">admin</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
       </Card>
       <Card className="p-6">
         <h2 className="mb-4 text-xl font-black">Профиль аккаунта</h2>
@@ -850,30 +940,35 @@ function SettingsPage({ session }: { session: Session }) {
           <InfoRow label="Имя" value={session.user.name} />
           <InfoRow label="Email" value={session.user.email} />
           <InfoRow label="Роль" value={session.user.role} />
-          <InfoRow label="Workspace" value={settings?.workspaceName ?? "NexusRM"} />
-          <InfoRow label="Часовой пояс" value={settings?.timezone ?? "Europe/Moscow"} />
-          <InfoRow label="Валюта" value={settings?.currency ?? "USD"} />
+          <InfoRow label="Workspace" value={settings.workspaceName} />
+          <InfoRow label="Часовой пояс" value={settings.timezone} />
+          <InfoRow label="Валюта" value={settings.currency} />
         </div>
       </Card>
     </div>
   );
 }
 
-function AdminPage({ session }: { session: Session }) {
+function AdminPage({ session, request }: { session: Session; request: AuthedRequest }) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
+  const [settings, setSettings] = useState<WorkspaceSettings>(defaultWorkspaceSettings);
   const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
   const [newKey, setNewKey] = useState("");
   const [error, setError] = useState("");
+  const [userForm, setUserForm] = useState<UserForm>(emptyUserForm);
+  const [savingUserId, setSavingUserId] = useState("");
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [savingSetting, setSavingSetting] = useState<keyof WorkspaceSettings | "">("");
+  const [togglingKeyId, setTogglingKeyId] = useState("");
 
   useEffect(() => {
     if (session.user.role !== "admin") return;
     void Promise.all([
-      apiRequest<AdminOverview>("/api/admin/overview", {}, session.accessToken),
-      apiRequest<AdminUser[]>("/api/admin/users", {}, session.accessToken),
-      apiRequest<WorkspaceSettings>("/api/admin/settings", {}, session.accessToken),
-      apiRequest<ApiKeyInfo[]>("/api/admin/api-keys", {}, session.accessToken),
+      request<AdminOverview>("/api/admin/overview"),
+      request<AdminUser[]>("/api/admin/users"),
+      request<WorkspaceSettings>("/api/admin/settings"),
+      request<ApiKeyInfo[]>("/api/admin/api-keys"),
     ])
       .then(([nextOverview, nextUsers, nextSettings, nextApiKeys]) => {
         setOverview(nextOverview);
@@ -882,19 +977,82 @@ function AdminPage({ session }: { session: Session }) {
         setApiKeys(nextApiKeys);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить админ-панель"));
-  }, [session.accessToken, session.user.role]);
+  }, [request, session.user.role]);
 
   async function createKey() {
     setError("");
     try {
-      const result = await apiRequest<{ apiKey: string; record: ApiKeyInfo }>("/api/admin/api-keys", {
+      const result = await request<{ apiKey: string; record: ApiKeyInfo }>("/api/admin/api-keys", {
         method: "POST",
         body: JSON.stringify({ name: "Ключ админ-панели" }),
-      }, session.accessToken);
+      });
       setNewKey(result.apiKey);
       setApiKeys((items) => [result.record, ...items]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать ключ");
+    }
+  }
+
+  async function toggleKey(id: string) {
+    setError("");
+    setTogglingKeyId(id);
+    try {
+      const next = await request<ApiKeyInfo>(`/api/admin/api-keys/${id}/toggle`, { method: "PATCH" });
+      setApiKeys((items) => items.map((item) => (item.id === id ? { ...item, isActive: next.isActive } : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось переключить API ключ");
+    } finally {
+      setTogglingKeyId("");
+    }
+  }
+
+  async function createUser() {
+    setError("");
+    setCreatingUser(true);
+    try {
+      const created = await request<AdminUser>("/api/admin/users", {
+        method: "POST",
+        body: JSON.stringify(userForm),
+      });
+      setUsers((items) => [...items, created]);
+      setUserForm(emptyUserForm);
+      setOverview((current) => current ? { ...current, users: current.users + 1 } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать пользователя");
+    } finally {
+      setCreatingUser(false);
+    }
+  }
+
+  async function updateUser(id: string, patch: Partial<AdminUser>) {
+    setError("");
+    setSavingUserId(id);
+    try {
+      const updated = await request<AdminUser>(`/api/admin/users/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      setUsers((items) => items.map((item) => (item.id === id ? updated : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить пользователя");
+    } finally {
+      setSavingUserId("");
+    }
+  }
+
+  async function updateSetting<K extends keyof WorkspaceSettings>(key: K, value: WorkspaceSettings[K]) {
+    setError("");
+    setSavingSetting(key);
+    try {
+      const next = await request<WorkspaceSettings>("/api/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ [key]: value }),
+      });
+      setSettings(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить настройку");
+    } finally {
+      setSavingSetting("");
     }
   }
 
@@ -916,20 +1074,73 @@ function AdminPage({ session }: { session: Session }) {
       </section>
 
       <Card className="p-6">
-        <h2 className="mb-4 text-xl font-black">Пользователи и роли</h2>
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h2 className="text-xl font-black">Пользователи и роли</h2>
+          <Button onClick={() => void createUser()} disabled={creatingUser || !userForm.email || !userForm.name || userForm.password.length < 6}>
+            <Plus size={18} />
+            {creatingUser ? "Создаем..." : "Добавить пользователя"}
+          </Button>
+        </div>
+        <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <TextInput label="Имя" value={userForm.name} onChange={(value) => setUserForm((form) => ({ ...form, name: value }))} />
+          <TextInput label="Email" value={userForm.email} onChange={(value) => setUserForm((form) => ({ ...form, email: value }))} />
+          <TextInput label="Пароль" value={userForm.password} onChange={(value) => setUserForm((form) => ({ ...form, password: value }))} type="password" />
+          <TextInput label="Должность" value={userForm.title} onChange={(value) => setUserForm((form) => ({ ...form, title: value }))} />
+          <TextInput label="Отдел" value={userForm.department} onChange={(value) => setUserForm((form) => ({ ...form, department: value }))} />
+          <TextInput label="Телефон" value={userForm.phone} onChange={(value) => setUserForm((form) => ({ ...form, phone: value }))} />
+          <label className="text-sm text-zinc-300">
+            Роль
+            <select value={userForm.role} onChange={(event) => setUserForm((form) => ({ ...form, role: event.target.value as Role }))} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+              <option value="admin">admin</option>
+              <option value="manager">manager</option>
+              <option value="viewer">viewer</option>
+            </select>
+          </label>
+          <label className="text-sm text-zinc-300">
+            Статус
+            <select value={userForm.status} onChange={(event) => setUserForm((form) => ({ ...form, status: event.target.value as UserForm["status"] }))} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+              <option value="active">active</option>
+              <option value="invited">invited</option>
+              <option value="disabled">disabled</option>
+            </select>
+          </label>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left text-sm">
+          <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="text-nexus-muted">
-              <tr><th className="p-3">Пользователь</th><th className="p-3">Должность</th><th className="p-3">Роль</th><th className="p-3">Статус</th><th className="p-3">Последний вход</th></tr>
+              <tr><th className="p-3">Пользователь</th><th className="p-3">Должность</th><th className="p-3">Роль</th><th className="p-3">Статус</th><th className="p-3">Последний вход</th><th className="p-3">Действия</th></tr>
             </thead>
             <tbody>
               {users.map((user) => (
                 <tr key={user.id} className="border-t border-nexus-border">
-                  <td className="p-3"><div className="font-bold">{user.name}</div><div className="text-xs text-nexus-muted">{user.email}</div></td>
-                  <td className="p-3">{user.title ?? "Не указано"}<div className="text-xs text-nexus-muted">{user.department ?? ""}</div></td>
-                  <td className="p-3">{user.role}</td>
-                  <td className="p-3"><Badge tone={user.status === "active" ? "green" : user.status === "disabled" ? "red" : "amber"}>{user.status}</Badge></td>
+                  <td className="p-3">
+                    <input value={user.name} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, name: event.target.value } : item))} className="mb-2 h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" />
+                    <div className="text-xs text-nexus-muted">{user.email}</div>
+                  </td>
+                  <td className="p-3">
+                    <input value={user.title ?? ""} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, title: event.target.value } : item))} className="mb-2 h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" placeholder="Должность" />
+                    <input value={user.department ?? ""} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, department: event.target.value } : item))} className="h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" placeholder="Отдел" />
+                  </td>
+                  <td className="p-3">
+                    <select value={user.role} onChange={(event) => void updateUser(user.id, { ...user, role: event.target.value as Role })} className="h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60">
+                      <option value="admin">admin</option>
+                      <option value="manager">manager</option>
+                      <option value="viewer">viewer</option>
+                    </select>
+                  </td>
+                  <td className="p-3">
+                    <select value={user.status} onChange={(event) => void updateUser(user.id, { ...user, status: event.target.value as AdminUser["status"] })} className="h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60">
+                      <option value="active">active</option>
+                      <option value="invited">invited</option>
+                      <option value="disabled">disabled</option>
+                    </select>
+                  </td>
                   <td className="p-3">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("ru-RU") : "еще не входил"}</td>
+                  <td className="p-3">
+                    <Button className="h-9" disabled={savingUserId === user.id} onClick={() => void updateUser(user.id, user)}>
+                      {savingUserId === user.id ? "Сохраняем..." : "Сохранить"}
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -941,12 +1152,13 @@ function AdminPage({ session }: { session: Session }) {
         <Card className="p-6">
           <h2 className="mb-4 text-xl font-black">Системные настройки</h2>
           <div className="space-y-3 text-sm">
-            <InfoRow label="Рабочее пространство" value={settings?.workspaceName ?? "NexusRM"} />
-            <InfoRow label="Часовой пояс" value={settings?.timezone ?? "Europe/Moscow"} />
-            <InfoRow label="Валюта" value={settings?.currency ?? "USD"} />
-            <InfoRow label="Роль по умолчанию" value={settings?.defaultRole ?? "manager"} />
-            <InfoRow label="AI" value={settings?.aiEnabled ? "включен" : "выключен"} />
-            <InfoRow label="Публичный API" value={settings?.publicApiEnabled ? "включен" : "выключен"} />
+            <InfoRow label="Рабочее пространство" value={settings.workspaceName} />
+            <InfoRow label="Часовой пояс" value={settings.timezone} />
+            <InfoRow label="Валюта" value={settings.currency} />
+            <InfoRow label="Роль по умолчанию" value={settings.defaultRole} />
+            <Toggle label="AI" enabled={settings.aiEnabled} busy={savingSetting === "aiEnabled"} disabled={savingSetting === "aiEnabled"} onToggle={() => void updateSetting("aiEnabled", !settings.aiEnabled)} />
+            <Toggle label="Публичный API" enabled={settings.publicApiEnabled} busy={savingSetting === "publicApiEnabled"} disabled={savingSetting === "publicApiEnabled"} onToggle={() => void updateSetting("publicApiEnabled", !settings.publicApiEnabled)} />
+            <Toggle label="Регистрация" enabled={settings.registrationEnabled} busy={savingSetting === "registrationEnabled"} disabled={savingSetting === "registrationEnabled"} onToggle={() => void updateSetting("registrationEnabled", !settings.registrationEnabled)} />
           </div>
         </Card>
 
@@ -961,7 +1173,9 @@ function AdminPage({ session }: { session: Session }) {
               <div key={key.id} className="rounded-md border border-nexus-border bg-black/35 p-3 text-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div><div className="font-bold">{key.name}</div><div className="font-mono text-xs text-nexus-muted">{key.prefix}...</div></div>
-                  <Badge tone={key.isActive ? "green" : "red"}>{key.isActive ? "активен" : "отключен"}</Badge>
+                  <button disabled={togglingKeyId === key.id} onClick={() => void toggleKey(key.id)} className="rounded-md border border-nexus-border px-3 py-2 text-xs font-bold transition hover:border-nexus-red/60 disabled:opacity-60">
+                    <Badge tone={key.isActive ? "green" : "red"}>{key.isActive ? "активен" : "отключен"}</Badge>
+                  </button>
                 </div>
               </div>
             ))}
@@ -981,14 +1195,29 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Toggle({ label, enabled }: { label: string; enabled: boolean }) {
+function TextInput({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return (
-    <div className="mb-3 flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-4">
+    <label className="text-sm text-zinc-300">
+      {label}
+      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60" />
+    </label>
+  );
+}
+
+function Toggle({ label, enabled, onToggle, disabled, busy }: { label: string; enabled: boolean; onToggle?: () => void; disabled?: boolean; busy?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled || !onToggle}
+      aria-pressed={enabled}
+      className="mb-3 flex w-full items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-4 text-left transition hover:border-nexus-red/60 disabled:cursor-not-allowed disabled:opacity-70"
+    >
       <span className="text-sm">{label}</span>
       <span className={cn("h-6 w-11 rounded-full p-1", enabled ? "bg-nexus-red" : "bg-zinc-700")}>
-        <span className={cn("block size-4 rounded-full bg-white transition", enabled && "translate-x-5")} />
+        <span className={cn("block size-4 rounded-full bg-white transition", enabled && "translate-x-5", busy && "opacity-60")} />
       </span>
-    </div>
+    </button>
   );
 }
 

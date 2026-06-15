@@ -208,6 +208,21 @@ export class UpdateUserDto {
   phone?: string;
 }
 
+export class CreateUserDto extends UpdateUserDto {
+  @ApiProperty({ example: "manager@nexusrm.ai" })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: "Мария Чен" })
+  @IsString()
+  name: string;
+
+  @ApiProperty({ example: "manager123" })
+  @IsString()
+  @MinLength(6)
+  password: string;
+}
+
 export class WorkspaceSettingsDto {
   @ApiPropertyOptional({ example: "NexusRM" })
   @IsOptional()
@@ -219,7 +234,7 @@ export class WorkspaceSettingsDto {
   @IsString()
   timezone?: string;
 
-  @ApiPropertyOptional({ example: "USD" })
+  @ApiPropertyOptional({ example: "RUB" })
   @IsOptional()
   @IsString()
   currency?: string;
