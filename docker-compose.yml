@@ -36,6 +36,8 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:4000
     container_name: nexusrm-frontend
     restart: unless-stopped
     environment:
