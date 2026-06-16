@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { ClientStatus, DealStage, Role, TaskPriority, TaskStatus, UserStatus } from "@prisma/client";
 import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, IsUrl, Max, Min, MinLength } from "class-validator";
 
@@ -68,7 +68,7 @@ export class CreateClientDto {
   managerId?: string;
 }
 
-export class UpdateClientDto extends CreateClientDto {}
+export class UpdateClientDto extends PartialType(CreateClientDto) {}
 
 export class CreateDealDto {
   @ApiProperty({ example: "Программа cloud-миграции" })
@@ -100,7 +100,7 @@ export class CreateDealDto {
   probability?: number;
 }
 
-export class UpdateDealDto extends CreateDealDto {}
+export class UpdateDealDto extends PartialType(CreateDealDto) {}
 
 export class CreateTaskDto {
   @ApiProperty({ example: "Отправить письмо сегодня" })
@@ -142,7 +142,7 @@ export class CreateTaskDto {
   dealId?: string;
 }
 
-export class UpdateTaskDto extends CreateTaskDto {}
+export class UpdateTaskDto extends PartialType(CreateTaskDto) {}
 
 export class PublicLeadDto {
   @ApiProperty({ example: "Acme Systems" })

@@ -31,7 +31,10 @@ export class ClientsController {
   @Roles(Role.admin, Role.manager)
   @Post()
   async create(@Body() dto: CreateClientDto, @CurrentUser() user: CurrentUser) {
-    const client = await this.prisma.client.create({ data: { ...dto, managerId: dto.managerId ?? user.sub } });
+    const client = await this.prisma.client.create({
+      data: { ...dto, managerId: dto.managerId ?? user.sub },
+      include: { manager: { select: { id: true, name: true, email: true } }, contacts: true, deals: true },
+    });
     await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "client.create", entity: "Client", entityId: client.id } });
     return client;
   }
@@ -39,7 +42,11 @@ export class ClientsController {
   @Roles(Role.admin, Role.manager)
   @Patch(":id")
   async update(@Param("id") id: string, @Body() dto: UpdateClientDto, @CurrentUser() user: CurrentUser) {
-    const client = await this.prisma.client.update({ where: { id }, data: dto });
+    const client = await this.prisma.client.update({
+      where: { id },
+      data: dto,
+      include: { manager: { select: { id: true, name: true, email: true } }, contacts: true, deals: true },
+    });
     await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "client.update", entity: "Client", entityId: id } });
     return client;
   }

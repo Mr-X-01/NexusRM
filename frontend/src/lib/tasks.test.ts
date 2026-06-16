@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildTask, moveTaskStatus, type CrmTask } from "./tasks";
 
 const taskList: CrmTask[] = [
-  { id: "t1", title: "Позвонить клиенту", client: "VectorCloud", due: "Сегодня", status: "todo", priority: "urgent" },
-  { id: "t2", title: "Подготовить КП", client: "RedForge Studio", due: "Завтра", status: "in_progress", priority: "high" },
+  { id: "t1", title: "Позвонить клиенту", client: "VectorCloud", due: "Сегодня", dueDateIso: "2026-06-16T00:00:00.000Z", status: "todo", priority: "urgent" },
+  { id: "t2", title: "Подготовить КП", client: "RedForge Studio", due: "Завтра", dueDateIso: "2026-06-17T00:00:00.000Z", status: "in_progress", priority: "high" },
 ];
 
 describe("task board helpers", () => {

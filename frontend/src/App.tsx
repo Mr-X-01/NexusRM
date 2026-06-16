@@ -24,10 +24,29 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { activities, clients, conversionSeries, deals, revenueSeries, stages, tasks, type ClientStatus, type DealStage, type TaskPriority, type TaskStatus } from "./data/demo";
 import { getApiErrorMessage, isExpiredTokenMessage } from "./lib/api";
-import { buildClient, type CrmClient } from "./lib/clients";
-import { buildTask, moveTaskStatus, type CrmTask } from "./lib/tasks";
+import {
+  backendDealStageByUi,
+  clientDraftToPayload,
+  dealDraftToPayload,
+  mapApiClient,
+  mapApiDeal,
+  mapApiTask,
+  moveDealStage,
+  moveTaskStatus,
+  stages,
+  taskDraftToPayload,
+  type ClientDraft,
+  type ClientStatus,
+  type CrmClient,
+  type CrmDeal,
+  type CrmTask,
+  type DealDraft,
+  type DealStage,
+  type TaskDraft,
+  type TaskPriority,
+  type TaskStatus,
+} from "./lib/crm";
 import { cn, money } from "./lib/utils";
 import { Badge, Button, Card, GhostButton, Skeleton } from "./components/ui";
 
@@ -49,7 +68,7 @@ type Session = {
 type AuthedRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 type DashboardStats = {
   clients: CrmClient[];
-  deals: typeof deals;
+  deals: CrmDeal[];
   tasks: CrmTask[];
   totalPipeline: number;
   weightedForecast: number;
@@ -132,38 +151,107 @@ export function App() {
     }
   });
   const [page, setPage] = useState<Page>("Дашборд");
-  const [clientList, setClientList] = useState<CrmClient[]>(clients);
-  const [selectedClient, setSelectedClient] = useState<CrmClient>(clients[0]);
+  const [clientList, setClientList] = useState<CrmClient[]>([]);
+  const [selectedClient, setSelectedClient] = useState<CrmClient | null>(null);
   const [loading, setLoading] = useState(false);
-  const [dealList, setDealList] = useState(deals);
-  const [taskList, setTaskList] = useState<CrmTask[]>(tasks);
+  const [dealList, setDealList] = useState<CrmDeal[]>([]);
+  const [taskList, setTaskList] = useState<CrmTask[]>([]);
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newDealOpen, setNewDealOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sessionNotice, setSessionNotice] = useState("");
+  const [crmLoading, setCrmLoading] = useState(false);
+  const [crmError, setCrmError] = useState("");
 
-  function createDeal(deal: (typeof deals)[number]) {
-    setDealList((prev) => [deal, ...prev]);
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    setCrmLoading(true);
+    setCrmError("");
+    Promise.all([
+      authenticatedRequest<unknown[]>("/api/clients"),
+      authenticatedRequest<unknown[]>("/api/deals"),
+      authenticatedRequest<unknown[]>("/api/tasks"),
+    ])
+      .then(([nextClients, nextDeals, nextTasks]) => {
+        if (!active) return;
+        const mappedClients = nextClients.map((client) => mapApiClient(client as Parameters<typeof mapApiClient>[0]));
+        const mappedDeals = nextDeals.map((deal) => mapApiDeal(deal as Parameters<typeof mapApiDeal>[0]));
+        const mappedTasks = nextTasks.map((task) => mapApiTask(task as Parameters<typeof mapApiTask>[0]));
+        setClientList(mappedClients);
+        setDealList(mappedDeals);
+        setTaskList(mappedTasks);
+        setSelectedClient((current) => mappedClients.find((client) => client.id === current?.id) ?? mappedClients[0] ?? null);
+      })
+      .catch((error) => {
+        if (active) setCrmError(error instanceof Error ? error.message : "Не удалось загрузить CRM данные");
+      })
+      .finally(() => {
+        if (active) setCrmLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken]);
+
+  async function createDeal(draft: DealDraft) {
+    setCrmError("");
+    const created = await authenticatedRequest<unknown>("/api/deals", {
+      method: "POST",
+      body: JSON.stringify(dealDraftToPayload(draft)),
+    });
+    setDealList((prev) => [mapApiDeal(created as Parameters<typeof mapApiDeal>[0]), ...prev]);
     setNewDealOpen(false);
     setPage("Сделки");
   }
 
-  function createClient(client: CrmClient) {
+  async function createClient(draft: ClientDraft) {
+    setCrmError("");
+    const created = await authenticatedRequest<unknown>("/api/clients", {
+      method: "POST",
+      body: JSON.stringify(clientDraftToPayload(draft)),
+    });
+    const client = mapApiClient(created as Parameters<typeof mapApiClient>[0]);
     setClientList((prev) => [client, ...prev]);
     setSelectedClient(client);
     setNewClientOpen(false);
     setPage("Клиенты");
   }
 
-  function createTask(task: CrmTask) {
-    setTaskList((prev) => [task, ...prev]);
+  async function createTask(draft: TaskDraft) {
+    setCrmError("");
+    const created = await authenticatedRequest<unknown>("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify(taskDraftToPayload(draft)),
+    });
+    setTaskList((prev) => [mapApiTask(created as Parameters<typeof mapApiTask>[0]), ...prev]);
     setNewTaskOpen(false);
     setPage("Задачи");
   }
 
-  function moveTask(taskId: string, status: TaskStatus) {
+  async function moveTask(taskId: string, status: TaskStatus) {
     setTaskList((prev) => moveTaskStatus(prev, taskId, status));
+    try {
+      await authenticatedRequest(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : "Не удалось сохранить статус задачи");
+    }
+  }
+
+  async function moveDeal(dealId: string, stage: DealStage) {
+    setDealList((prev) => moveDealStage(prev, dealId, stage));
+    try {
+      await authenticatedRequest(`/api/deals/${dealId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ stage: backendDealStageByUi[stage] }),
+      });
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : "Не удалось сохранить стадию сделки");
+    }
   }
 
   const kpis = useMemo(
@@ -241,7 +329,8 @@ export function App() {
 
   if (!session) return <LoginScreen onLogin={login} notice={sessionNotice} />;
 
-  const visibleNav = nav.filter((item) => item.label !== "Админ-панель" || session.user.role === "admin");
+  const visibleNav = nav.filter((item) => session.user.role === "admin" || !["Админ-панель", "Настройки", "API Документация"].includes(item.label));
+  const createActionLabel = page === "Задачи" ? "Новая задача" : page === "Клиенты" ? "Новый клиент" : page === "Сделки" || page === "Дашборд" ? "Новая сделка" : "";
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(255,45,45,0.18),transparent_34%),linear-gradient(180deg,#050505,#0B0B0F)] text-white">
@@ -307,10 +396,12 @@ export function App() {
               <GhostButton className="hidden size-10 shrink-0 px-0 sm:inline-flex" aria-label="Уведомления">
                 <Bell size={18} />
               </GhostButton>
-              <Button className="shrink-0 px-3 md:px-4" onClick={() => page === "Задачи" ? setNewTaskOpen(true) : page === "Клиенты" ? setNewClientOpen(true) : setNewDealOpen(true)}>
-                <Plus size={18} />
-                <span className="hidden sm:inline">{page === "Задачи" ? "Новая задача" : page === "Клиенты" ? "Новый клиент" : "Новая сделка"}</span>
-              </Button>
+              {createActionLabel ? (
+                <Button className="shrink-0 px-3 md:px-4" onClick={() => page === "Задачи" ? setNewTaskOpen(true) : page === "Клиенты" ? setNewClientOpen(true) : setNewDealOpen(true)}>
+                  <Plus size={18} />
+                  <span className="hidden sm:inline">{createActionLabel}</span>
+                </Button>
+              ) : null}
               <GhostButton className="size-10 shrink-0 px-0" onClick={logout} aria-label="Выйти">
                 <LogOut size={18} />
               </GhostButton>
@@ -319,10 +410,12 @@ export function App() {
 
           <div className="p-4 md:p-7">
             {loading ? <LoadingState /> : null}
-            {!loading && page === "Дашборд" && <Dashboard kpis={kpis} stats={dashboardStats} />}
+            {crmError ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{crmError}</div> : null}
+            {crmLoading && !loading ? <LoadingState /> : null}
+            {!loading && !crmLoading && page === "Дашборд" && <Dashboard kpis={kpis} stats={dashboardStats} />}
             {!loading && page === "Клиенты" && <ClientsPage clients={clientList} onCreateClient={() => setNewClientOpen(true)} onSelect={(client) => { setSelectedClient(client); switchPage("Профиль клиента"); }} />}
-            {!loading && page === "Профиль клиента" && <ClientProfile client={selectedClient} />}
-            {!loading && page === "Сделки" && <DealsPage deals={dealList} />}
+            {!loading && page === "Профиль клиента" && (selectedClient ? <ClientProfile client={selectedClient} deals={dealList} /> : <EmptyState title="Клиент не выбран" detail="Откройте клиента из списка." />)}
+            {!loading && page === "Сделки" && <DealsPage deals={dealList} onMoveDeal={moveDeal} />}
             {!loading && page === "Задачи" && <TasksPage tasks={taskList} onMoveTask={moveTask} onCreateTask={() => setNewTaskOpen(true)} />}
             {!loading && page === "AI Ассистент" && <AiPage stats={dashboardStats} />}
             {!loading && page === "API Документация" && <ApiDocsPage />}
@@ -332,8 +425,8 @@ export function App() {
         </main>
       </div>
       {newClientOpen && <NewClientModal onClose={() => setNewClientOpen(false)} onCreate={createClient} />}
-      {newDealOpen && <NewDealModal onClose={() => setNewDealOpen(false)} onCreate={createDeal} />}
-      {newTaskOpen && <NewTaskModal onClose={() => setNewTaskOpen(false)} onCreate={createTask} />}
+      {newDealOpen && <NewDealModal clients={clientList} onClose={() => setNewDealOpen(false)} onCreate={createDeal} />}
+      {newTaskOpen && <NewTaskModal clients={clientList} onClose={() => setNewTaskOpen(false)} onCreate={createTask} />}
     </div>
   );
 }
@@ -417,10 +510,17 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
     count: stats.deals.filter((deal) => deal.stage === stage).length,
     amount: stats.deals.filter((deal) => deal.stage === stage).reduce((sum, deal) => sum + deal.amount, 0),
   }));
+  const revenueSeries = buildRevenueSeries(stats.deals);
+  const conversionSeries = stageBreakdown.map((item) => ({ stage: item.stage, value: item.count }));
   const taskBreakdown = (["todo", "in_progress", "done"] as const).map((status) => ({
     status,
     count: stats.tasks.filter((task) => task.status === status).length,
   }));
+  const activities = [
+    stats.atRiskClients[0] ? `${stats.atRiskClients[0].name} в зоне риска: health score ${stats.atRiskClients[0].healthScore}%.` : "Критичных клиентов сейчас нет.",
+    stats.deals[0] ? `${stats.deals[0].title}: стадия ${stats.deals[0].stage}, вероятность ${stats.deals[0].probability}%.` : "Добавьте первую сделку, чтобы увидеть pipeline.",
+    stats.urgentTasks[0] ? `Срочная задача: ${stats.urgentTasks[0].title}.` : "Срочных задач нет.",
+  ];
 
   return (
     <div className="space-y-6">
@@ -552,7 +652,22 @@ function MetricTile({ label, value, detail, tone = "default" }: { label: string;
   );
 }
 
-function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: (client: CrmClient) => void }) {
+function buildRevenueSeries(deals: CrmDeal[]) {
+  const months = new Map<string, { month: string; revenue: number; forecast: number }>();
+  deals.forEach((deal) => {
+    const date = new Date(deal.closeDateIso);
+    const month = Number.isNaN(date.getTime()) ? "Без даты" : new Intl.DateTimeFormat("ru-RU", { month: "short" }).format(date);
+    const current = months.get(month) ?? { month, revenue: 0, forecast: 0 };
+    months.set(month, {
+      month,
+      revenue: deal.stage === "Выиграна" ? current.revenue + deal.amount : current.revenue,
+      forecast: current.forecast + deal.amount * (deal.probability / 100),
+    });
+  });
+  return Array.from(months.values()).length ? Array.from(months.values()) : [{ month: "Нет данных", revenue: 0, forecast: 0 }];
+}
+
+function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: (client: ClientDraft) => void }) {
   const [name, setName] = useState("");
   const [industry, setIndustry] = useState("");
   const [tags, setTags] = useState("");
@@ -569,7 +684,7 @@ function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
       setError("Укажите отрасль клиента");
       return;
     }
-    onCreate(buildClient({ name, industry, tags, manager, status }));
+    onCreate({ name, industry, tags, manager, status });
   }
 
   return (
@@ -643,8 +758,8 @@ function ClientsPage({ clients, onCreateClient, onSelect }: { clients: CrmClient
   );
 }
 
-function ClientProfile({ client }: { client: CrmClient }) {
-  const clientDeals = deals.filter((deal) => deal.client === client.name);
+function ClientProfile({ client, deals }: { client: CrmClient; deals: CrmDeal[] }) {
+  const clientDeals = deals.filter((deal) => deal.clientId === client.id);
   return (
     <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
       <Card className="p-6">
@@ -673,29 +788,58 @@ function ClientProfile({ client }: { client: CrmClient }) {
   );
 }
 
-function DealsPage({ deals: dealsProp }: { deals: typeof deals }) {
+function DealsPage({ deals: dealsProp, onMoveDeal }: { deals: CrmDeal[]; onMoveDeal: (dealId: string, stage: DealStage) => void }) {
+  const [draggingDealId, setDraggingDealId] = useState("");
+
   return (
-    <div className="grid min-w-0 gap-4 xl:grid-cols-6">
+    <div className="space-y-5">
+      <p className="text-sm text-nexus-muted">Перетащите сделку между стадиями или создайте новую через кнопку вверху.</p>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-6">
       {stages.map((stage) => {
         const stageDeals = dealsProp.filter((deal) => deal.stage === stage);
         return (
-          <Card key={stage} className="min-h-80 p-3">
+          <Card
+            key={stage}
+            className={cn("min-h-80 p-3 transition", draggingDealId && "border-red-500/45 bg-red-500/[0.03]")}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              const dealId = event.dataTransfer.getData("text/deal-id") || draggingDealId;
+              if (dealId) onMoveDeal(dealId, stage);
+              setDraggingDealId("");
+            }}
+          >
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-bold">{stage}</h2>
               <Badge>{stageDeals.length}</Badge>
             </div>
             <div className="space-y-3">
-              {stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} />)}
+              {stageDeals.map((deal) => (
+                <div
+                  key={deal.id}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("text/deal-id", deal.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    setDraggingDealId(deal.id);
+                  }}
+                  onDragEnd={() => setDraggingDealId("")}
+                  className={cn("cursor-grab active:cursor-grabbing", draggingDealId === deal.id && "opacity-50")}
+                >
+                  <DealCard deal={deal} />
+                </div>
+              ))}
               {!stageDeals.length && <EmptyState title="Пусто" detail="Переместите сделку сюда." compact />}
             </div>
           </Card>
         );
       })}
+      </div>
     </div>
   );
 }
 
-function DealCard({ deal }: { deal: (typeof deals)[number] }) {
+function DealCard({ deal }: { deal: CrmDeal }) {
   return (
     <div className="rounded-md border border-nexus-border bg-black/30 p-3">
       <div className="mb-2 text-sm font-bold">{deal.title}</div>
@@ -708,9 +852,9 @@ function DealCard({ deal }: { deal: (typeof deals)[number] }) {
   );
 }
 
-function NewDealModal({ onClose, onCreate }: { onClose: () => void; onCreate: (deal: (typeof deals)[number]) => void }) {
+function NewDealModal({ clients, onClose, onCreate }: { clients: CrmClient[]; onClose: () => void; onCreate: (deal: DealDraft) => void }) {
   const [title, setTitle] = useState("");
-  const [client, setClient] = useState(clients[0].name);
+  const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const [stage, setStage] = useState<DealStage>(stages[0]);
   const [amount, setAmount] = useState("");
   const [closeDate, setCloseDate] = useState("");
@@ -722,18 +866,19 @@ function NewDealModal({ onClose, onCreate }: { onClose: () => void; onCreate: (d
       setError("Укажите название сделки");
       return;
     }
+    if (!clientId) {
+      setError("Сначала добавьте или выберите клиента");
+      return;
+    }
     const amountNum = Number(amount) || 0;
     const probabilityNum = Math.min(100, Math.max(0, Number(probability) || 0));
     onCreate({
-      id: `d${Date.now()}`,
       title: title.trim(),
-      client,
+      clientId,
       stage,
       amount: amountNum,
       closeDate: closeDate.trim() || "Не указано",
       probability: probabilityNum,
-      aiScore: Math.round(probabilityNum * 0.9),
-      risk: probabilityNum >= 60 ? "low" : probabilityNum >= 35 ? "medium" : "high",
     });
   }
 
@@ -749,8 +894,9 @@ function NewDealModal({ onClose, onCreate }: { onClose: () => void; onCreate: (d
             <input className={inputClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например, Внедрение CRM" />
           </Field>
           <Field label="Клиент">
-            <select className={inputClass} value={client} onChange={(event) => setClient(event.target.value)}>
-              {clients.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            <select className={inputClass} value={clientId} onChange={(event) => setClientId(event.target.value)}>
+              <option value="">Выберите клиента</option>
+              {clients.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </Field>
           <div className="grid grid-cols-2 gap-3">
@@ -759,7 +905,7 @@ function NewDealModal({ onClose, onCreate }: { onClose: () => void; onCreate: (d
                 {stages.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </Field>
-            <Field label="Сумма, $">
+            <Field label="Сумма, RUB">
               <input className={inputClass} type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="42000" />
             </Field>
           </div>
@@ -779,9 +925,9 @@ function NewDealModal({ onClose, onCreate }: { onClose: () => void; onCreate: (d
   );
 }
 
-function NewTaskModal({ onClose, onCreate }: { onClose: () => void; onCreate: (task: CrmTask) => void }) {
+function NewTaskModal({ clients, onClose, onCreate }: { clients: CrmClient[]; onClose: () => void; onCreate: (task: TaskDraft) => void }) {
   const [title, setTitle] = useState("");
-  const [client, setClient] = useState(clients[0].name);
+  const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const [due, setDue] = useState("Сегодня");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [error, setError] = useState("");
@@ -791,7 +937,7 @@ function NewTaskModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t
       setError("Укажите название задачи");
       return;
     }
-    onCreate(buildTask({ title, client, due, priority }));
+    onCreate({ title, clientId: clientId || undefined, due, priority });
   }
 
   return (
@@ -806,8 +952,9 @@ function NewTaskModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t
             <input className={inputClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например, Позвонить клиенту" />
           </Field>
           <Field label="Клиент">
-            <select className={inputClass} value={client} onChange={(event) => setClient(event.target.value)}>
-              {clients.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            <select className={inputClass} value={clientId} onChange={(event) => setClientId(event.target.value)}>
+              <option value="">Без клиента</option>
+              {clients.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </Field>
           <div className="grid grid-cols-2 gap-3">
@@ -842,7 +989,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function DealRow({ deal }: { deal: (typeof deals)[number] }) {
+function DealRow({ deal }: { deal: CrmDeal }) {
   return (
     <div className="flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-4">
       <div>
@@ -1213,6 +1360,21 @@ function SettingsPage({ session, request }: { session: Session; request: AuthedR
   }
 
   const canEdit = session.user.role === "admin";
+
+  if (!canEdit) {
+    return (
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="p-6">
+          <h2 className="mb-4 text-xl font-black">Профиль аккаунта</h2>
+          <div className="space-y-3 text-sm">
+            <InfoRow label="Имя" value={session.user.name} />
+            <InfoRow label="Email" value={session.user.email} />
+            <InfoRow label="Роль" value={session.user.role} />
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">

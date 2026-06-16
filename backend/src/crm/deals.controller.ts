@@ -29,7 +29,10 @@ export class DealsController {
   @Roles(Role.admin, Role.manager)
   @Post()
   async create(@Body() dto: CreateDealDto, @CurrentUser() user: CurrentUser) {
-    const deal = await this.prisma.deal.create({ data: { ...dto, closeDate: new Date(dto.closeDate) } });
+    const deal = await this.prisma.deal.create({
+      data: { ...dto, closeDate: new Date(dto.closeDate) },
+      include: { client: true, tasks: true },
+    });
     await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "deal.create", entity: "Deal", entityId: deal.id } });
     return deal;
   }
@@ -37,7 +40,8 @@ export class DealsController {
   @Roles(Role.admin, Role.manager)
   @Patch(":id")
   async update(@Param("id") id: string, @Body() dto: UpdateDealDto, @CurrentUser() user: CurrentUser) {
-    const deal = await this.prisma.deal.update({ where: { id }, data: { ...dto, closeDate: new Date(dto.closeDate) } });
+    const data = { ...dto, closeDate: dto.closeDate ? new Date(dto.closeDate) : undefined };
+    const deal = await this.prisma.deal.update({ where: { id }, data, include: { client: true, tasks: true } });
     await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "deal.update", entity: "Deal", entityId: id } });
     return deal;
   }

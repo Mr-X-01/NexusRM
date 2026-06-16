@@ -20,7 +20,10 @@ export class TasksController {
   @Roles(Role.admin, Role.manager)
   @Post()
   async create(@Body() dto: CreateTaskDto, @CurrentUser() user: CurrentUser) {
-    const task = await this.prisma.task.create({ data: { ...dto, dueDate: new Date(dto.dueDate) } });
+    const task = await this.prisma.task.create({
+      data: { ...dto, dueDate: new Date(dto.dueDate) },
+      include: { assignee: true, client: true, deal: true },
+    });
     await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "task.create", entity: "Task", entityId: task.id } });
     return task;
   }
@@ -28,7 +31,8 @@ export class TasksController {
   @Roles(Role.admin, Role.manager)
   @Patch(":id")
   async update(@Param("id") id: string, @Body() dto: UpdateTaskDto, @CurrentUser() user: CurrentUser) {
-    const task = await this.prisma.task.update({ where: { id }, data: { ...dto, dueDate: new Date(dto.dueDate) } });
+    const data = { ...dto, dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined };
+    const task = await this.prisma.task.update({ where: { id }, data, include: { assignee: true, client: true, deal: true } });
     await this.prisma.auditLog.create({ data: { actorId: user.sub, action: "task.update", entity: "Task", entityId: id } });
     return task;
   }
