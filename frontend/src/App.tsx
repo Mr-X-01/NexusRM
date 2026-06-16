@@ -480,9 +480,14 @@ export function App() {
                 </GhostButton>
               </div>
               <NavLinks items={visibleNav} page={page} onNavigate={switchPage} />
-              <div className="app-soft-surface mt-auto rounded-md border border-nexus-border px-3 py-3 text-xs">
-                <div className="font-bold text-slate-950">{session.user.name}</div>
-                <div className="text-nexus-muted">{session.user.role}</div>
+              <div className="app-soft-surface mt-auto flex items-center justify-between gap-3 rounded-md border border-nexus-border px-3 py-3 text-xs">
+                <div className="min-w-0">
+                  <div className="truncate font-bold text-slate-950">{session.user.name}</div>
+                  <div className="truncate text-nexus-muted">{session.user.role}</div>
+                </div>
+                <GhostButton className="size-9 shrink-0 px-0" onClick={logout} aria-label="Выйти">
+                  <LogOut size={18} />
+                </GhostButton>
               </div>
             </aside>
           </div>
@@ -491,50 +496,29 @@ export function App() {
         <main className="min-w-0 flex-1">
           <header className="app-header sticky top-0 z-20 border-b border-nexus-border px-4 py-3 backdrop-blur md:px-7 md:py-4">
             <div className="lg:hidden">
-              <div className="app-mobile-brand rounded-[1.35rem] border border-nexus-border px-3 py-3 shadow-red">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <GhostButton className="size-10 shrink-0 px-0" onClick={() => setMobileNavOpen(true)} aria-label="Открыть меню">
-                      <PanelLeft size={18} />
+              <div className="flex items-center gap-3">
+                <GhostButton className="size-10 shrink-0 px-0" onClick={() => setMobileNavOpen(true)} aria-label="Открыть меню">
+                  <PanelLeft size={18} />
+                </GhostButton>
+                <h1 className="min-w-0 flex-1 truncate text-xl font-black leading-tight tracking-normal">{page}</h1>
+                <div className="flex shrink-0 items-center gap-1">
+                  <div className="relative shrink-0">
+                    <GhostButton className="size-10 px-0" aria-label="Уведомления" onClick={() => setNotificationsOpen((prev) => !prev)}>
+                      <Bell size={18} />
+                      {renderNotificationBadge(notifications.length)}
                     </GhostButton>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="rounded-full border border-nexus-border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-nexus-muted">
-                          NexusRM
-                        </div>
-                        <span className="hidden text-[10px] font-medium uppercase tracking-[0.16em] text-nexus-muted sm:inline">mobile workspace</span>
-                      </div>
-                      <div className="mt-2 truncate text-[11px] font-medium uppercase tracking-[0.16em] text-nexus-muted">Центр управления продажами</div>
-                      <h1 className="truncate pt-1 text-[1.85rem] font-black leading-none tracking-normal">{page}</h1>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-start gap-2">
-                    <div className="relative shrink-0">
-                      <GhostButton className="size-10 px-0" aria-label="Уведомления" onClick={() => setNotificationsOpen((prev) => !prev)}>
-                        <Bell size={18} />
-                        {renderNotificationBadge(notifications.length)}
-                      </GhostButton>
-                      {notificationsOpen ? (
-                        <NotificationsPanel notifications={notifications} onClose={() => setNotificationsOpen(false)} />
-                      ) : null}
-                    </div>
-                    {createActionLabel ? (
-                      <Button className="size-10 shrink-0 px-0" aria-label={createActionLabel} onClick={openCreateModal}>
-                        <Plus size={18} />
-                      </Button>
+                    {notificationsOpen ? (
+                      <NotificationsPanel notifications={notifications} onClose={() => setNotificationsOpen(false)} />
                     ) : null}
-                    <GhostButton className="size-10 shrink-0 px-0" onClick={logout} aria-label="Выйти">
-                      <LogOut size={18} />
-                    </GhostButton>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="app-soft-surface rounded-full border border-nexus-border px-3 py-2 text-[11px] font-medium text-nexus-muted">
-                    {notifications.length ? `${notifications.length} активных сигнала` : "Все каналы спокойны"}
                   </div>
                   <GhostButton className="size-10 shrink-0 px-0" onClick={toggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
                     {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
                   </GhostButton>
+                  {createActionLabel ? (
+                    <Button className="size-10 shrink-0 px-0" aria-label={createActionLabel} onClick={openCreateModal}>
+                      <Plus size={18} />
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>
