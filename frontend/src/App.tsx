@@ -20,6 +20,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  TrendingUp,
   Users,
   X,
 } from "lucide-react";
@@ -54,6 +55,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "./lib/crm";
+import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn, money } from "./lib/utils";
 import { Badge, Button, Card, GhostButton, Skeleton } from "./components/ui";
 
@@ -645,23 +647,41 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {kpis.map((kpi) => (
-          <Card key={kpi.label} className="p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="text-sm text-nexus-muted">{kpi.label}</div>
-              <kpi.icon className="text-nexus-red" size={18} />
+          <Card
+            key={kpi.label}
+            className="group relative overflow-hidden p-4 transition duration-300 hover:-translate-y-1 hover:border-nexus-red/40 hover:shadow-[0_0_50px_rgba(255,45,45,0.28)]"
+          >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-nexus-red/70 to-transparent opacity-60 transition-opacity duration-300 group-hover:opacity-100" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,45,45,0.12),transparent_60%)] opacity-70 transition-opacity duration-300 group-hover:opacity-100" />
+            <div className="relative">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="text-xs font-medium uppercase tracking-wide text-nexus-muted">{kpi.label}</div>
+                <span className="relative flex size-9 items-center justify-center rounded-lg border border-nexus-red/30 bg-nexus-red/10 text-nexus-red shadow-[0_0_18px_rgba(255,45,45,0.25)] transition group-hover:border-nexus-red/60 group-hover:shadow-[0_0_26px_rgba(255,45,45,0.45)]">
+                  <kpi.icon size={18} />
+                </span>
+              </div>
+              <div className="text-3xl font-black leading-none tracking-tight">{kpi.value}</div>
+              <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-red-200">
+                <span className="size-1.5 rounded-full bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]" />
+                {kpi.delta}
+              </div>
             </div>
-            <div className="text-2xl font-black tracking-normal">{kpi.value}</div>
-            <div className="mt-2 text-xs text-red-200">{kpi.delta}</div>
           </Card>
         ))}
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="p-5">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold">Прогноз выручки</h2>
-              <p className="text-sm text-nexus-muted">Взвешенный прогноз: {money(Math.round(stats.weightedForecast))}</p>
+        <Card className="relative overflow-hidden p-5">
+          <div className="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-nexus-red/10 blur-3xl" />
+          <div className="relative mb-5 flex items-center justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex size-9 items-center justify-center rounded-lg border border-nexus-red/30 bg-nexus-red/10 text-nexus-red shadow-[0_0_18px_rgba(255,45,45,0.25)]">
+                <TrendingUp size={18} />
+              </span>
+              <div>
+                <h2 className="text-lg font-bold">Прогноз выручки</h2>
+                <p className="text-sm text-nexus-muted">Взвешенный прогноз: {money(Math.round(stats.weightedForecast))}</p>
+              </div>
             </div>
             <Badge tone="red">Взвешенный прогноз</Badge>
           </div>
@@ -669,7 +689,10 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-4 text-lg font-bold">Операционная сводка</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <Activity className="text-nexus-red" size={18} />
+            <h2 className="text-lg font-bold">Операционная сводка</h2>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${stats.deals.filter(isActiveDeal).length} активных сделок`} />
             <MetricTile label="Won revenue" value={money(stats.wonRevenue)} detail="закрытая выручка" />
@@ -681,43 +704,73 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
 
       <section className="grid gap-5 xl:grid-cols-3">
         <Card className="p-5">
-          <h2 className="mb-4 text-lg font-bold">Pipeline по стадиям</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <BarChart3 className="text-nexus-red" size={18} />
+            <h2 className="text-lg font-bold">Pipeline по стадиям</h2>
+          </div>
           <div className="space-y-3">
-            {stageBreakdown.map((item) => (
-              <div key={item.stage} className="rounded-md border border-nexus-border bg-white/[0.025] p-3">
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="font-bold">{item.stage}</span>
-                  <span className="text-nexus-muted">{item.count}</span>
+            {(() => {
+              const maxStageAmount = Math.max(1, ...stageBreakdown.map((item) => item.amount));
+              return stageBreakdown.map((item) => (
+                <div
+                  key={item.stage}
+                  className="group rounded-md border border-nexus-border bg-white/[0.025] p-3 transition hover:border-nexus-red/40 hover:bg-white/[0.045]"
+                >
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span className="font-bold">{item.stage}</span>
+                    <span className="text-nexus-muted">{item.count}</span>
+                  </div>
+                  <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-zinc-800/80">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-nexus-accent to-nexus-red shadow-[0_0_10px_rgba(255,45,45,0.5)] transition-all"
+                      style={{ width: `${Math.max(6, (item.amount / maxStageAmount) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="text-sm font-medium text-red-100">{money(item.amount)}</div>
                 </div>
-                <div className="text-sm text-red-100">{money(item.amount)}</div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         </Card>
         <Card className="p-5">
-          <h2 className="mb-4 text-lg font-bold">Задачи по статусам</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <CheckCircle2 className="text-nexus-red" size={18} />
+            <h2 className="text-lg font-bold">Задачи по статусам</h2>
+          </div>
           <div className="space-y-3">
             {taskBreakdown.map((item) => (
-              <div key={item.status} className="flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm">
-                <span>{taskStatusLabels[item.status]}</span>
+              <div
+                key={item.status}
+                className="flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm transition hover:border-nexus-red/40 hover:bg-white/[0.045]"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]" />
+                  {taskStatusLabels[item.status]}
+                </span>
                 <Badge>{item.count}</Badge>
               </div>
             ))}
           </div>
         </Card>
         <Card className="p-5">
-          <h2 className="mb-4 text-lg font-bold">Воронка конверсии</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <TrendingUp className="text-nexus-red" size={18} />
+            <h2 className="text-lg font-bold">Воронка конверсии</h2>
+          </div>
           <FunnelBars data={conversionSeries} />
         </Card>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card className="p-5">
-          <h2 className="mb-4 text-lg font-bold">Последние активности</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <Activity className="text-nexus-red" size={18} />
+            <h2 className="text-lg font-bold">Последние активности</h2>
+          </div>
           <div className="space-y-3">
             {activities.map((activity) => (
-              <div key={activity} className="flex gap-3 rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm text-zinc-300">
-                <span className="mt-1 size-2 shrink-0 rounded-full bg-nexus-red" />
+              <div key={activity} className="flex gap-3 rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm text-zinc-300 transition hover:border-nexus-red/40 hover:bg-white/[0.045]">
+                <span className="mt-1 size-2 shrink-0 rounded-full bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]" />
                 {activity}
               </div>
             ))}
@@ -728,53 +781,46 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
   );
 }
 
-function RevenueChart({ data }: { data: RevenueSeriesPoint[] }) {
-  const width = 720;
-  const height = 260;
-  const padding = { top: 18, right: 24, bottom: 34, left: 58 };
-  const plotWidth = width - padding.left - padding.right;
-  const plotHeight = height - padding.top - padding.bottom;
-  const values = data.flatMap((point) => [point.revenue, point.forecast]).filter((value): value is number => typeof value === "number");
-  const maxValue = Math.max(1, ...values);
-  const yMax = Math.ceil(maxValue / 15000) * 15000;
-  const ticks = [0, Math.round(yMax / 3), Math.round((yMax / 3) * 2), yMax];
-
-  function x(index: number) {
-    return padding.left + (data.length <= 1 ? plotWidth / 2 : (plotWidth / (data.length - 1)) * index);
-  }
-
-  function y(value: number) {
-    return padding.top + plotHeight - (value / yMax) * plotHeight;
-  }
-
-  function points(key: "revenue" | "forecast") {
-    return data
-      .map((point, index) => (typeof point[key] === "number" ? `${x(index)},${y(point[key])}` : ""))
-      .filter(Boolean)
-      .join(" ");
-  }
-
+function RevenueChartTooltip({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string }) {
+  if (!active || !payload?.length) return null;
   return (
-    <div className="h-72 overflow-hidden">
-      <svg className="size-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Прогноз выручки по месяцам">
-        {ticks.map((tick) => (
-          <g key={tick}>
-            <line x1={padding.left} x2={width - padding.right} y1={y(tick)} y2={y(tick)} stroke="#2A2A32" />
-            <text x={padding.left - 10} y={y(tick) + 4} textAnchor="end" className="fill-zinc-400 text-[12px]">{tick.toLocaleString("ru-RU")}</text>
-          </g>
-        ))}
-        <line x1={padding.left} x2={padding.left} y1={padding.top} y2={height - padding.bottom} stroke="#A1A1AA" />
-        <line x1={padding.left} x2={width - padding.right} y1={height - padding.bottom} y2={height - padding.bottom} stroke="#A1A1AA" />
-        {points("forecast") ? <polyline points={points("forecast")} fill="none" stroke="#A1A1AA" strokeDasharray="6 6" strokeWidth="2.5" /> : null}
-        {points("revenue") ? <polyline points={points("revenue")} fill="none" stroke="#FF2D2D" strokeWidth="3" /> : null}
-        {data.map((point, index) => (
-          <g key={`${point.month}-${index}`}>
-            {typeof point.forecast === "number" ? <circle cx={x(index)} cy={y(point.forecast)} r="4.5" fill="#0B0B0F" stroke="#A1A1AA" strokeWidth="2.5"><title>{`${point.month}: прогноз ${money(point.forecast)}`}</title></circle> : null}
-            {typeof point.revenue === "number" ? <circle cx={x(index)} cy={y(point.revenue)} r="5" fill="#0B0B0F" stroke="#FF2D2D" strokeWidth="3"><title>{`${point.month}: выручка ${money(point.revenue)}`}</title></circle> : null}
-            <text x={x(index)} y={height - 12} textAnchor="middle" className="fill-zinc-400 text-[13px]">{point.month}</text>
-          </g>
-        ))}
-      </svg>
+    <div className="rounded-md border border-nexus-border bg-nexus-bg/95 px-3 py-2 text-xs shadow-xl backdrop-blur">
+      <div className="mb-1 font-bold text-white">{label}</div>
+      {payload.filter((row) => typeof row.value === "number").map((row) => (
+        <div key={row.name} className="flex items-center gap-2">
+          <span className="size-2 rounded-full" style={{ background: row.color }} />
+          <span className="text-nexus-muted">{row.name}:</span>
+          <span className="font-semibold text-white">{money(Math.round(row.value))}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RevenueChart({ data }: { data: RevenueSeriesPoint[] }) {
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 12, right: 12, bottom: 4, left: 4 }}>
+          <defs>
+            <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#FF2D2D" stopOpacity={0.85} />
+              <stop offset="100%" stopColor="#FF2D2D" stopOpacity={0.25} />
+            </linearGradient>
+            <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#A1A1AA" stopOpacity={0.25} />
+              <stop offset="100%" stopColor="#A1A1AA" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#2A2A32" vertical={false} />
+          <XAxis dataKey="month" stroke="#71717A" tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#2A2A32" }} />
+          <YAxis stroke="#71717A" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={64} tickFormatter={(value: number) => money(value)} />
+          <Tooltip content={<RevenueChartTooltip />} cursor={{ fill: "rgba(255,45,45,0.06)" }} />
+          <Area type="monotone" dataKey="forecast" name="AI-прогноз" stroke="#A1A1AA" strokeWidth={2} strokeDasharray="6 6" fill="url(#forecastFill)" connectNulls dot={{ r: 3, fill: "#0B0B0F", stroke: "#A1A1AA", strokeWidth: 2 }} />
+          <Bar dataKey="revenue" name="Выручка" fill="url(#revFill)" radius={[6, 6, 0, 0]} barSize={28} />
+          <Line type="monotone" dataKey="revenue" name="Тренд выручки" stroke="#FF2D2D" strokeWidth={3} dot={{ r: 4, fill: "#0B0B0F", stroke: "#FF2D2D", strokeWidth: 3 }} connectNulls legendType="none" />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -785,13 +831,16 @@ function FunnelBars({ data }: { data: { stage: DealStage; value: number }[] }) {
   return (
     <div className="space-y-3">
       {data.map((item) => (
-        <div key={item.stage} className="rounded-md border border-nexus-border bg-white/[0.025] p-3">
+        <div key={item.stage} className="group rounded-md border border-nexus-border bg-white/[0.025] p-3 transition hover:border-nexus-red/40 hover:bg-white/[0.045]">
           <div className="mb-2 flex items-center justify-between gap-3 text-sm">
             <span className="font-bold">{item.stage}</span>
             <Badge>{item.value}</Badge>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
-            <div className="h-full rounded-full bg-nexus-red" style={{ width: `${Math.max(8, (item.value / maxValue) * 100)}%` }} />
+          <div className="h-2 overflow-hidden rounded-full bg-zinc-800/80">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-nexus-accent to-nexus-red shadow-[0_0_10px_rgba(255,45,45,0.5)] transition-all"
+              style={{ width: `${Math.max(8, (item.value / maxValue) * 100)}%` }}
+            />
           </div>
         </div>
       ))}
@@ -806,11 +855,20 @@ function MetricTile({ label, value, detail, tone = "default" }: { label: string;
     green: "border-emerald-500/25 bg-emerald-500/8",
     amber: "border-amber-500/25 bg-amber-500/8",
   };
+  const accents = {
+    default: "bg-nexus-muted",
+    red: "bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]",
+    green: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]",
+    amber: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.55)]",
+  };
   return (
-    <div className={cn("rounded-md border p-3", tones[tone])}>
-      <div className="text-xs uppercase text-nexus-muted">{label}</div>
-      <div className="mt-1 text-xl font-black">{value}</div>
-      <div className="mt-1 text-xs text-zinc-400">{detail}</div>
+    <div className={cn("relative overflow-hidden rounded-md border p-3 transition hover:-translate-y-0.5", tones[tone])}>
+      <span className={cn("absolute inset-y-0 left-0 w-1 rounded-l-md", accents[tone])} />
+      <div className="pl-1.5">
+        <div className="text-xs uppercase tracking-wide text-nexus-muted">{label}</div>
+        <div className="mt-1 text-xl font-black">{value}</div>
+        <div className="mt-1 text-xs text-zinc-400">{detail}</div>
+      </div>
     </div>
   );
 }
