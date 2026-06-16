@@ -36,7 +36,7 @@ export function Badge({ children, tone = "default" }: { children: ReactNode; ton
     green: "border-emerald-200 bg-emerald-50 text-emerald-700",
     amber: "border-amber-200 bg-amber-50 text-amber-700",
   };
-  return <span className={cn("inline-flex rounded-md border px-2 py-1 text-xs font-medium", tones[tone])}>{children}</span>;
+  return <span className={cn("inline-flex rounded-md border px-2 py-1 text-xs font-medium backdrop-blur-sm", tones[tone])}>{children}</span>;
 }
 
 export function Skeleton({ className }: { className?: string }) {

@@ -370,7 +370,9 @@ export function App() {
     return items;
   }, [clientList, taskList]);
 
-  function switchPage(next: Page) {    setMobileNavOpen(false);
+  function switchPage(next: Page) {
+    setMobileNavOpen(false);
+    setNotificationsOpen(false);
     setLoading(true);
     setPage(next);
     window.setTimeout(() => setLoading(false), 420);
@@ -421,9 +423,22 @@ export function App() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   }
 
+  function openCreateModal() {
+    if (page === "Задачи") {
+      setNewTaskOpen(true);
+      return;
+    }
+    if (page === "Клиенты") {
+      setNewClientOpen(true);
+      return;
+    }
+    setNewDealOpen(true);
+  }
+
   if (!session) return <LoginScreen onLogin={login} notice={sessionNotice} theme={theme} onToggleTheme={toggleTheme} />;
 
   const visibleNav = nav.filter((item) => session.user.role === "admin" || !["Админ-панель", "Настройки", "API Документация"].includes(item.label));
+  const mobilePrimaryNav = visibleNav.filter((item) => ["Дашборд", "Клиенты", "Сделки", "Задачи"].includes(item.label));
   const createActionLabel = page === "Задачи" ? "Новая задача" : page === "Клиенты" ? "Новый клиент" : page === "Сделки" || page === "Дашборд" ? "Новая сделка" : "";
 
   return (
@@ -475,44 +490,52 @@ export function App() {
 
         <main className="min-w-0 flex-1">
           <header className="app-header sticky top-0 z-20 border-b border-nexus-border px-4 py-3 backdrop-blur md:px-7 md:py-4">
-            <div className="space-y-3 lg:hidden">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <GhostButton className="size-10 shrink-0 px-0" onClick={() => setMobileNavOpen(true)} aria-label="Открыть меню">
-                    <PanelLeft size={18} />
-                  </GhostButton>
-                  <div className="rounded-full border border-nexus-border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-nexus-muted">
-                    NexusRM
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="relative shrink-0">
-                    <GhostButton className="size-10 px-0" aria-label="Уведомления" onClick={() => setNotificationsOpen((prev) => !prev)}>
-                      <Bell size={18} />
-                      {renderNotificationBadge(notifications.length)}
+            <div className="lg:hidden">
+              <div className="app-mobile-brand rounded-[1.35rem] border border-nexus-border px-3 py-3 shadow-red">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <GhostButton className="size-10 shrink-0 px-0" onClick={() => setMobileNavOpen(true)} aria-label="Открыть меню">
+                      <PanelLeft size={18} />
                     </GhostButton>
-                    {notificationsOpen ? (
-                      <NotificationsPanel notifications={notifications} onClose={() => setNotificationsOpen(false)} />
-                    ) : null}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-full border border-nexus-border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-nexus-muted">
+                          NexusRM
+                        </div>
+                        <span className="hidden text-[10px] font-medium uppercase tracking-[0.16em] text-nexus-muted sm:inline">mobile workspace</span>
+                      </div>
+                      <div className="mt-2 truncate text-[11px] font-medium uppercase tracking-[0.16em] text-nexus-muted">Центр управления продажами</div>
+                      <h1 className="truncate pt-1 text-[1.85rem] font-black leading-none tracking-normal">{page}</h1>
+                    </div>
                   </div>
-                  {createActionLabel ? (
-                    <Button className="size-10 shrink-0 px-0" aria-label={createActionLabel} onClick={() => page === "Задачи" ? setNewTaskOpen(true) : page === "Клиенты" ? setNewClientOpen(true) : setNewDealOpen(true)}>
-                      <Plus size={18} />
-                    </Button>
-                  ) : null}
-                  <GhostButton className="size-10 shrink-0 px-0" onClick={logout} aria-label="Выйти">
-                    <LogOut size={18} />
+                  <div className="flex shrink-0 items-start gap-2">
+                    <div className="relative shrink-0">
+                      <GhostButton className="size-10 px-0" aria-label="Уведомления" onClick={() => setNotificationsOpen((prev) => !prev)}>
+                        <Bell size={18} />
+                        {renderNotificationBadge(notifications.length)}
+                      </GhostButton>
+                      {notificationsOpen ? (
+                        <NotificationsPanel notifications={notifications} onClose={() => setNotificationsOpen(false)} />
+                      ) : null}
+                    </div>
+                    {createActionLabel ? (
+                      <Button className="size-10 shrink-0 px-0" aria-label={createActionLabel} onClick={openCreateModal}>
+                        <Plus size={18} />
+                      </Button>
+                    ) : null}
+                    <GhostButton className="size-10 shrink-0 px-0" onClick={logout} aria-label="Выйти">
+                      <LogOut size={18} />
+                    </GhostButton>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="app-soft-surface rounded-full border border-nexus-border px-3 py-2 text-[11px] font-medium text-nexus-muted">
+                    {notifications.length ? `${notifications.length} активных сигнала` : "Все каналы спокойны"}
+                  </div>
+                  <GhostButton className="size-10 shrink-0 px-0" onClick={toggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
+                    {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
                   </GhostButton>
                 </div>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-nexus-muted">Центр управления продажами</div>
-                  <h1 className="truncate pt-1 text-[2rem] font-black leading-none tracking-normal">{page}</h1>
-                </div>
-                <GhostButton className="mt-1 size-10 shrink-0 px-0" onClick={toggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
-                  {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-                </GhostButton>
               </div>
             </div>
 
@@ -539,7 +562,7 @@ export function App() {
                 ) : null}
               </div>
               {createActionLabel ? (
-                <Button className="shrink-0 px-3 md:px-4" onClick={() => page === "Задачи" ? setNewTaskOpen(true) : page === "Клиенты" ? setNewClientOpen(true) : setNewDealOpen(true)}>
+                <Button className="shrink-0 px-3 md:px-4" onClick={openCreateModal}>
                   <Plus size={18} />
                   <span className="hidden sm:inline">{createActionLabel}</span>
                 </Button>
@@ -550,7 +573,7 @@ export function App() {
             </div>
           </header>
 
-          <div className="p-4 md:p-7">
+          <div className="p-4 pb-28 md:p-7 lg:pb-7">
             {loading ? <LoadingState /> : null}
             {crmError ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">{crmError}</div> : null}
             {crmLoading && !loading ? <LoadingState /> : null}
@@ -563,6 +586,40 @@ export function App() {
             {!loading && page === "API Документация" && <ApiDocsPage />}
             {!loading && page === "Настройки" && <SettingsPage session={session} request={authenticatedRequest} theme={theme} onToggleTheme={toggleTheme} />}
             {!loading && page === "Админ-панель" && <AdminPage session={session} request={authenticatedRequest} />}
+          </div>
+
+          <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 px-4 pb-[max(0.9rem,env(safe-area-inset-bottom))] pt-3 lg:hidden">
+            <nav className="app-mobile-dock pointer-events-auto mx-auto flex max-w-md items-center justify-between gap-1 rounded-[1.5rem] border border-nexus-border p-2 backdrop-blur-xl">
+              {mobilePrimaryNav.map((item) => {
+                const active = page === item.label;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => switchPage(item.label)}
+                    className={cn(
+                      "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[1rem] px-2 py-2 text-[11px] font-medium transition",
+                      active ? "bg-nexus-red/14 text-slate-950" : "text-nexus-muted hover:text-nexus-red",
+                    )}
+                  >
+                    <span className={cn("flex size-9 items-center justify-center rounded-xl border transition", active ? "border-nexus-red/30 bg-nexus-red/18 text-nexus-red" : "border-transparent bg-transparent")}>
+                      <item.icon size={18} />
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[1rem] px-2 py-2 text-[11px] font-medium text-nexus-muted transition hover:text-nexus-red"
+              >
+                <span className="flex size-9 items-center justify-center rounded-xl border border-transparent">
+                  <PanelLeft size={18} />
+                </span>
+                <span className="truncate">Еще</span>
+              </button>
+            </nav>
           </div>
         </main>
       </div>
@@ -590,7 +647,7 @@ function NotificationsPanel({ notifications, onClose }: { notifications: Notific
   return (
     <>
       <div className="fixed inset-0 z-30" onClick={onClose} aria-hidden />
-      <div className="absolute right-0 top-12 z-40 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-nexus-border bg-white shadow-xl">
+      <div className="app-strong-surface absolute right-0 top-12 z-40 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-[1.1rem] border border-nexus-border shadow-xl backdrop-blur-xl">
         <div className="flex items-center justify-between border-b border-nexus-border px-4 py-3">
           <span className="text-sm font-semibold">Уведомления</span>
           <GhostButton className="size-7 px-0" onClick={onClose} aria-label="Закрыть">
@@ -617,19 +674,22 @@ function NotificationsPanel({ notifications, onClose }: { notifications: Notific
   );
 }
 
-function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; onNavigate: (next: Page) => void }) {  return (
+function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; onNavigate: (next: Page) => void }) {
+  return (
     <nav className="space-y-1">
       {items.map((item) => (
         <button
           key={item.label}
           onClick={() => onNavigate(item.label)}
           className={cn(
-            "flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-slate-500 transition hover:bg-slate-50 hover:text-nexus-red",
-            page === item.label && "bg-nexus-red/14 text-slate-950 ring-1 ring-nexus-red/35",
+            "group flex h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium text-nexus-muted transition hover:bg-slate-50 hover:text-nexus-red",
+            page === item.label && "bg-nexus-red/14 text-slate-950 ring-1 ring-nexus-red/30",
           )}
         >
-          <item.icon size={18} />
-          {item.label}
+          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg border border-transparent transition", page === item.label ? "border-nexus-red/30 bg-nexus-red/10 text-nexus-red" : "group-hover:border-nexus-border")}>
+            <item.icon size={18} />
+          </span>
+          <span className="truncate">{item.label}</span>
         </button>
       ))}
     </nav>
@@ -670,36 +730,77 @@ function LoginScreen({
   }
 
   return (
-    <div className="app-auth-screen grid min-h-screen place-items-center p-4 text-slate-950 sm:p-5">
-      <Card className="w-full max-w-md p-7">
-        <div className="mb-7 flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <img className="size-12 rounded-lg" src="/logo.png" alt="Логотип NexusRM" />
-            <div>
-              <h1 className="text-2xl font-black">NexusRM</h1>
-              <p className="text-sm text-nexus-muted">Защищенный центр управления CRM</p>
+    <div className="app-auth-screen app-login-shell min-h-screen px-4 py-6 text-slate-950 sm:px-5 sm:py-8">
+      <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-5xl items-center gap-5 lg:grid-cols-[1.08fr_0.92fr]">
+        <Card className="app-login-card hidden min-h-[520px] flex-col justify-between p-7 lg:flex">
+          <div>
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-nexus-red/30 bg-nexus-red/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
+              <Sparkles size={14} />
+              AI sales cockpit
+            </div>
+            <h1 className="max-w-lg text-4xl font-black leading-tight">CRM, которая ощущается как рабочее приложение, а не как таб в браузере.</h1>
+            <p className="mt-4 max-w-lg text-sm leading-7 text-nexus-muted">
+              Быстрый вход, живые сделки, сигналы риска, задачи и доступ к API в одном рабочем контуре.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricTile label="Pipeline" value="166 500 ₽" detail="3 активных сделки" />
+            <MetricTile label="AI score" value="42%" detail="1 клиент в риске" tone="red" />
+            <MetricTile label="Today" value="3" detail="фокусных действия" tone="amber" />
+          </div>
+        </Card>
+
+        <Card className="app-login-card relative w-full max-w-md justify-self-center p-6 sm:p-7">
+          <div className="relative z-10">
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <img className="size-12 rounded-xl shadow-red" src="/logo.png" alt="Логотип NexusRM" />
+                <div>
+                  <h1 className="text-3xl font-black leading-none">NexusRM</h1>
+                  <p className="mt-1 text-sm text-nexus-muted">Защищенный центр управления CRM</p>
+                </div>
+              </div>
+              <GhostButton className="h-10 px-3" onClick={onToggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </GhostButton>
+            </div>
+
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-nexus-border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-nexus-muted">
+              <Shield size={13} className="text-nexus-red" />
+              Workspace access
+            </div>
+
+            <div className="app-soft-surface rounded-[1.2rem] border border-nexus-border p-4">
+              <p className="mb-4 text-sm leading-6 text-nexus-muted">Войдите вручную или выберите готовый рабочий профиль ниже.</p>
+              <label className="mb-2 block text-sm text-slate-700">Email</label>
+              <input value={email} onChange={(event) => setEmail(event.target.value)} className="app-input mb-4 h-12 w-full rounded-xl border border-nexus-border px-4 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
+              <label className="mb-2 block text-sm text-slate-700">Пароль</label>
+              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" className="app-input mb-5 h-12 w-full rounded-xl border border-nexus-border px-4 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
+              {notice ? <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">{notice}</div> : null}
+              {error ? <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700">{error}</div> : null}
+              <Button className="h-12 w-full rounded-xl text-base" onClick={() => void submit()} disabled={loading}>
+                <Lock size={18} />
+                {loading ? "Проверяем доступ..." : "Войти в рабочее пространство"}
+              </Button>
+            </div>
+
+            <div className="mt-4 space-y-2 text-xs text-nexus-muted">
+              <button className="app-strong-surface flex w-full items-center justify-between rounded-xl border border-nexus-border px-3 py-3 text-left transition hover:border-nexus-red/60" onClick={() => useAccount("admin@nexusrm.ai", "admin123")}>
+                <span>Админ: Алексей Орлов</span>
+                <ChevronRight size={15} className="text-nexus-red" />
+              </button>
+              <button className="app-strong-surface flex w-full items-center justify-between rounded-xl border border-nexus-border px-3 py-3 text-left transition hover:border-nexus-red/60" onClick={() => useAccount("manager@nexusrm.ai", "manager123")}>
+                <span>Менеджер: Мария Чен</span>
+                <ChevronRight size={15} className="text-nexus-red" />
+              </button>
+              <button className="app-strong-surface flex w-full items-center justify-between rounded-xl border border-nexus-border px-3 py-3 text-left transition hover:border-nexus-red/60" onClick={() => useAccount("viewer@nexusrm.ai", "viewer123")}>
+                <span>Просмотр: Илья Соколов</span>
+                <ChevronRight size={15} className="text-nexus-red" />
+              </button>
             </div>
           </div>
-          <GhostButton className="h-9 px-3" onClick={onToggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </GhostButton>
-        </div>
-        <label className="mb-2 block text-sm text-slate-700">Email</label>
-        <input value={email} onChange={(event) => setEmail(event.target.value)} className="app-input mb-4 h-11 w-full rounded-md border border-nexus-border px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
-        <label className="mb-2 block text-sm text-slate-700">Пароль</label>
-        <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" className="app-input mb-5 h-11 w-full rounded-md border border-nexus-border px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
-        {notice ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">{notice}</div> : null}
-        {error ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700">{error}</div> : null}
-        <Button className="w-full" onClick={() => void submit()} disabled={loading}>
-          <Lock size={18} />
-          {loading ? "Проверяем доступ..." : "Войти в рабочее пространство"}
-        </Button>
-        <div className="mt-4 grid gap-2 text-xs text-nexus-muted">
-          <button className="rounded-md border border-nexus-border p-2 text-left hover:border-nexus-red/60" onClick={() => useAccount("admin@nexusrm.ai", "admin123")}>Админ: Алексей Орлов</button>
-          <button className="rounded-md border border-nexus-border p-2 text-left hover:border-nexus-red/60" onClick={() => useAccount("manager@nexusrm.ai", "manager123")}>Менеджер: Мария Чен</button>
-          <button className="rounded-md border border-nexus-border p-2 text-left hover:border-nexus-red/60" onClick={() => useAccount("viewer@nexusrm.ai", "viewer123")}>Просмотр: Илья Соколов</button>
-        </div>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
