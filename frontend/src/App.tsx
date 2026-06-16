@@ -28,6 +28,7 @@ import { getApiErrorMessage, isExpiredTokenMessage } from "./lib/api";
 import {
   backendDealStageByUi,
   clientDraftToPayload,
+  clientToUpdatePayload,
   dealDraftToPayload,
   mapApiClient,
   mapApiDeal,
@@ -217,6 +218,18 @@ export function App() {
     setSelectedClient(client);
     setNewClientOpen(false);
     setPage("Клиенты");
+  }
+
+  async function updateClient(client: CrmClient) {
+    setCrmError("");
+    const updated = await authenticatedRequest<unknown>(`/api/clients/${client.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(clientToUpdatePayload(client)),
+    });
+    const next = mapApiClient(updated as Parameters<typeof mapApiClient>[0]);
+    setClientList((items) => items.map((item) => (item.id === next.id ? next : item)));
+    setSelectedClient(next);
+    return next;
   }
 
   async function createTask(draft: TaskDraft) {
@@ -414,7 +427,7 @@ export function App() {
             {crmLoading && !loading ? <LoadingState /> : null}
             {!loading && !crmLoading && page === "Дашборд" && <Dashboard kpis={kpis} stats={dashboardStats} />}
             {!loading && page === "Клиенты" && <ClientsPage clients={clientList} onCreateClient={() => setNewClientOpen(true)} onSelect={(client) => { setSelectedClient(client); switchPage("Профиль клиента"); }} />}
-            {!loading && page === "Профиль клиента" && (selectedClient ? <ClientProfile client={selectedClient} deals={dealList} /> : <EmptyState title="Клиент не выбран" detail="Откройте клиента из списка." />)}
+            {!loading && page === "Профиль клиента" && (selectedClient ? <ClientProfile client={selectedClient} deals={dealList} onUpdateClient={updateClient} /> : <EmptyState title="Клиент не выбран" detail="Откройте клиента из списка." />)}
             {!loading && page === "Сделки" && <DealsPage deals={dealList} onMoveDeal={moveDeal} />}
             {!loading && page === "Задачи" && <TasksPage tasks={taskList} onMoveTask={moveTask} onCreateTask={() => setNewTaskOpen(true)} />}
             {!loading && page === "AI Ассистент" && <AiPage stats={dashboardStats} />}
@@ -758,23 +771,98 @@ function ClientsPage({ clients, onCreateClient, onSelect }: { clients: CrmClient
   );
 }
 
-function ClientProfile({ client, deals }: { client: CrmClient; deals: CrmDeal[] }) {
+function ClientProfile({ client, deals, onUpdateClient }: { client: CrmClient; deals: CrmDeal[]; onUpdateClient: (client: CrmClient) => Promise<CrmClient> }) {
   const clientDeals = deals.filter((deal) => deal.clientId === client.id);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(client);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDraft(client);
+    setError("");
+    setEditing(false);
+  }, [client.id]);
+
+  async function save() {
+    if (!draft.name.trim()) {
+      setError("Название клиента обязательно");
+      return;
+    }
+    if (!draft.industry.trim()) {
+      setError("Отрасль клиента обязательна");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const next = await onUpdateClient(draft);
+      setDraft(next);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить клиента");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
       <Card className="p-6">
-        <h2 className="text-2xl font-black">{client.name}</h2>
-        <p className="mt-1 text-nexus-muted">{client.industry}</p>
-        <div className="mt-5 flex flex-wrap gap-2">{client.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div>
-        <div className="mt-6 space-y-3 text-sm text-zinc-300">
-          <p>Статус: {clientStatusLabels[client.status]}</p>
-          <p>Ответственный менеджер: {client.manager}</p>
-          <p>Контакты: {client.contacts.join(", ")}</p>
-          <p>Последняя активность: {client.lastActivity}</p>
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-black">{client.name}</h2>
+            <p className="mt-1 text-nexus-muted">{client.industry}</p>
+          </div>
+          {editing ? (
+            <div className="flex gap-2">
+              <GhostButton className="h-9" onClick={() => { setDraft(client); setEditing(false); }}>Отмена</GhostButton>
+              <Button className="h-9" disabled={saving} onClick={() => void save()}>{saving ? "Сохраняем..." : "Сохранить"}</Button>
+            </div>
+          ) : (
+            <Button className="h-9" onClick={() => setEditing(true)}>Редактировать</Button>
+          )}
         </div>
+        {editing ? (
+          <div className="grid gap-3">
+            <Field label="Название компании">
+              <input className={inputClass} value={draft.name} onChange={(event) => setDraft((item) => ({ ...item, name: event.target.value }))} />
+            </Field>
+            <Field label="Отрасль">
+              <input className={inputClass} value={draft.industry} onChange={(event) => setDraft((item) => ({ ...item, industry: event.target.value }))} />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Статус">
+                <select className={inputClass} value={draft.status} onChange={(event) => setDraft((item) => ({ ...item, status: event.target.value as ClientStatus }))}>
+                  <option value="new">новый</option>
+                  <option value="active">активный</option>
+                  <option value="at_risk">риск</option>
+                  <option value="lost">потерян</option>
+                </select>
+              </Field>
+              <Field label="Health score">
+                <input className={inputClass} type="number" min="0" max="100" value={draft.healthScore} onChange={(event) => setDraft((item) => ({ ...item, healthScore: Math.min(100, Math.max(0, Number(event.target.value) || 0)) }))} />
+              </Field>
+            </div>
+            <Field label="Теги через запятую">
+              <input className={inputClass} value={draft.tags.join(", ")} onChange={(event) => setDraft((item) => ({ ...item, tags: event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean) }))} />
+            </Field>
+            {error ? <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
+          </div>
+        ) : (
+          <>
+            <div className="mt-5 flex flex-wrap gap-2">{client.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div>
+            <div className="mt-6 space-y-3 text-sm text-zinc-300">
+              <p>Статус: {clientStatusLabels[client.status]}</p>
+              <p>Ответственный менеджер: {client.manager}</p>
+              <p>Контакты: {client.contacts.length ? client.contacts.join(", ") : "Контакты пока не добавлены"}</p>
+              <p>Последняя активность: {client.lastActivity}</p>
+            </div>
+          </>
+        )}
         <Card className="mt-6 border-red-500/25 bg-red-500/8 p-4">
           <div className="mb-2 text-sm font-bold text-red-100">AI health score клиента</div>
-          <div className="text-4xl font-black">{client.healthScore}%</div>
+          <div className="text-4xl font-black">{editing ? draft.healthScore : client.healthScore}%</div>
           <p className="mt-2 text-sm text-nexus-muted">{client.notes}</p>
         </Card>
       </Card>

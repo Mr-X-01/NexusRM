@@ -182,6 +182,16 @@ export function clientDraftToPayload(draft: ClientDraft) {
   };
 }
 
+export function clientToUpdatePayload(client: Pick<CrmClient, "name" | "industry" | "status" | "tags" | "healthScore">) {
+  return {
+    name: client.name.trim(),
+    industry: client.industry.trim(),
+    status: client.status,
+    tags: client.tags,
+    healthScore: client.healthScore,
+  };
+}
+
 export function dealDraftToPayload(draft: DealDraft) {
   return {
     title: draft.title.trim(),

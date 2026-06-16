@@ -62,6 +62,13 @@ export class CreateClientDto {
   @IsArray()
   tags?: string[];
 
+  @ApiPropertyOptional({ example: 75 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  healthScore?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
