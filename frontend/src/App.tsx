@@ -633,6 +633,9 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
   }));
   const revenueSeries = buildRevenueSeries(stats.deals);
   const conversionSeries = stageBreakdown.map((item) => ({ stage: item.stage, value: item.count }));
+  const activeDealsCount = stats.deals.filter(isActiveDeal).length;
+  const weightedForecast = Math.round(stats.weightedForecast);
+  const forecastCoverage = stats.totalPipeline ? Math.round((weightedForecast / stats.totalPipeline) * 100) : 0;
   const taskBreakdown = (["todo", "in_progress", "done"] as const).map((status) => ({
     status,
     count: stats.tasks.filter((task) => task.status === status).length,
@@ -645,24 +648,60 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card className="relative overflow-hidden p-5 sm:p-6">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,45,45,0.16),transparent_36%),radial-gradient(circle_at_85%_18%,rgba(255,255,255,0.08),transparent_24%)]" />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-nexus-red/30 bg-nexus-red/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-red-100">
+                <Sparkles size={14} />
+                AI sales cockpit
+              </div>
+              <h2 className="text-2xl font-black leading-tight sm:text-3xl">Фокус на выручку, риски и действия</h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                Взвешенный прогноз {money(weightedForecast)} покрывает {forecastCoverage}% активной воронки.
+                {stats.atRiskClients.length ? ` Внимание на ${stats.atRiskClients[0].name}.` : " Критичных клиентов сейчас нет."}
+              </p>
+            </div>
+            <div className="grid min-w-[260px] grid-cols-2 gap-3">
+              <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${activeDealsCount} активных сделок`} />
+              <MetricTile label="Forecast" value={money(weightedForecast)} detail="с учетом вероятности" tone="red" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-5 sm:p-6">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">Операционная сводка</h2>
+              <p className="mt-1 text-sm text-nexus-muted">Ключевые сигналы на сегодня</p>
+            </div>
+            <Activity className="text-nexus-red" size={20} />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <MetricTile label="Won revenue" value={money(stats.wonRevenue)} detail="закрытая выручка" tone="green" />
+            <MetricTile label="Клиенты в риске" value={stats.atRiskClients.length.toString()} detail={stats.atRiskClients[0]?.name ?? "критичных нет"} tone={stats.atRiskClients.length ? "red" : "green"} />
+            <MetricTile label="Срочные задачи" value={stats.urgentTasks.length.toString()} detail={stats.urgentTasks[0]?.title ?? "нет просрочки"} tone={stats.urgentTasks.length ? "amber" : "green"} />
+          </div>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
         {kpis.map((kpi) => (
           <Card
             key={kpi.label}
-            className="group relative overflow-hidden p-4 transition duration-300 hover:-translate-y-1 hover:border-nexus-red/40 hover:shadow-[0_0_50px_rgba(255,45,45,0.28)]"
+            className="group relative overflow-hidden p-4 transition duration-300 hover:-translate-y-0.5 hover:border-white/15 hover:bg-white/[0.045]"
           >
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-nexus-red/70 to-transparent opacity-60 transition-opacity duration-300 group-hover:opacity-100" />
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,45,45,0.12),transparent_60%)] opacity-70 transition-opacity duration-300 group-hover:opacity-100" />
             <div className="relative">
               <div className="mb-4 flex items-center justify-between">
                 <div className="text-xs font-medium uppercase tracking-wide text-nexus-muted">{kpi.label}</div>
-                <span className="relative flex size-9 items-center justify-center rounded-lg border border-nexus-red/30 bg-nexus-red/10 text-nexus-red shadow-[0_0_18px_rgba(255,45,45,0.25)] transition group-hover:border-nexus-red/60 group-hover:shadow-[0_0_26px_rgba(255,45,45,0.45)]">
+                <span className="relative flex size-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-red-200 transition group-hover:border-nexus-red/40 group-hover:text-nexus-red">
                   <kpi.icon size={18} />
                 </span>
               </div>
               <div className="text-3xl font-black leading-none tracking-tight">{kpi.value}</div>
               <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-red-200">
-                <span className="size-1.5 rounded-full bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]" />
+                <span className="size-1.5 rounded-full bg-nexus-red" />
                 {kpi.delta}
               </div>
             </div>
@@ -672,15 +711,14 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
 
       <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="relative overflow-hidden p-5">
-          <div className="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-nexus-red/10 blur-3xl" />
           <div className="relative mb-5 flex items-center justify-between">
             <div className="flex items-start gap-3">
-              <span className="flex size-9 items-center justify-center rounded-lg border border-nexus-red/30 bg-nexus-red/10 text-nexus-red shadow-[0_0_18px_rgba(255,45,45,0.25)]">
+              <span className="flex size-9 items-center justify-center rounded-md border border-nexus-red/30 bg-nexus-red/10 text-nexus-red">
                 <TrendingUp size={18} />
               </span>
               <div>
                 <h2 className="text-lg font-bold">Прогноз выручки</h2>
-                <p className="text-sm text-nexus-muted">Взвешенный прогноз: {money(Math.round(stats.weightedForecast))}</p>
+                <p className="text-sm text-nexus-muted">Взвешенный прогноз: {money(weightedForecast)}</p>
               </div>
             </div>
             <Badge tone="red">Взвешенный прогноз</Badge>
@@ -691,13 +729,15 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
         <Card className="p-5">
           <div className="mb-4 flex items-center gap-2">
             <Activity className="text-nexus-red" size={18} />
-            <h2 className="text-lg font-bold">Операционная сводка</h2>
+            <h2 className="text-lg font-bold">Последние активности</h2>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${stats.deals.filter(isActiveDeal).length} активных сделок`} />
-            <MetricTile label="Won revenue" value={money(stats.wonRevenue)} detail="закрытая выручка" />
-            <MetricTile label="Клиенты в риске" value={stats.atRiskClients.length.toString()} detail={stats.atRiskClients[0]?.name ?? "критичных нет"} tone={stats.atRiskClients.length ? "red" : "green"} />
-            <MetricTile label="Срочные задачи" value={stats.urgentTasks.length.toString()} detail={stats.urgentTasks[0]?.title ?? "нет просрочки"} tone={stats.urgentTasks.length ? "amber" : "green"} />
+          <div className="space-y-3">
+            {activities.map((activity) => (
+              <div key={activity} className="flex gap-3 rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm leading-5 text-zinc-300 transition hover:border-white/15 hover:bg-white/[0.045]">
+                <span className="mt-1 size-2 shrink-0 rounded-full bg-nexus-red" />
+                {activity}
+              </div>
+            ))}
           </div>
         </Card>
       </section>
@@ -722,7 +762,7 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
                   </div>
                   <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-zinc-800/80">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-nexus-accent to-nexus-red shadow-[0_0_10px_rgba(255,45,45,0.5)] transition-all"
+                      className="h-full rounded-full bg-gradient-to-r from-red-200 to-nexus-red transition-all"
                       style={{ width: `${Math.max(6, (item.amount / maxStageAmount) * 100)}%` }}
                     />
                   </div>
@@ -744,7 +784,7 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
                 className="flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm transition hover:border-nexus-red/40 hover:bg-white/[0.045]"
               >
                 <span className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-full bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]" />
+                  <span className="size-1.5 rounded-full bg-nexus-red" />
                   {taskStatusLabels[item.status]}
                 </span>
                 <Badge>{item.count}</Badge>
@@ -758,23 +798,6 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
             <h2 className="text-lg font-bold">Воронка конверсии</h2>
           </div>
           <FunnelBars data={conversionSeries} />
-        </Card>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <Card className="p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Activity className="text-nexus-red" size={18} />
-            <h2 className="text-lg font-bold">Последние активности</h2>
-          </div>
-          <div className="space-y-3">
-            {activities.map((activity) => (
-              <div key={activity} className="flex gap-3 rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm text-zinc-300 transition hover:border-nexus-red/40 hover:bg-white/[0.045]">
-                <span className="mt-1 size-2 shrink-0 rounded-full bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]" />
-                {activity}
-              </div>
-            ))}
-          </div>
         </Card>
       </section>
     </div>
@@ -851,18 +874,18 @@ function FunnelBars({ data }: { data: { stage: DealStage; value: number }[] }) {
 function MetricTile({ label, value, detail, tone = "default" }: { label: string; value: string; detail: string; tone?: "default" | "red" | "green" | "amber" }) {
   const tones = {
     default: "border-nexus-border bg-white/[0.025]",
-    red: "border-red-500/25 bg-red-500/8",
-    green: "border-emerald-500/25 bg-emerald-500/8",
-    amber: "border-amber-500/25 bg-amber-500/8",
+    red: "border-red-500/30 bg-red-500/10",
+    green: "border-emerald-500/25 bg-emerald-500/10",
+    amber: "border-amber-500/25 bg-amber-500/10",
   };
   const accents = {
     default: "bg-nexus-muted",
-    red: "bg-nexus-red shadow-[0_0_8px_rgba(255,45,45,0.6)]",
-    green: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]",
-    amber: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.55)]",
+    red: "bg-nexus-red",
+    green: "bg-emerald-400",
+    amber: "bg-amber-400",
   };
   return (
-    <div className={cn("relative overflow-hidden rounded-md border p-3 transition hover:-translate-y-0.5", tones[tone])}>
+    <div className={cn("relative overflow-hidden rounded-md border p-3 transition hover:-translate-y-0.5 hover:border-white/15", tones[tone])}>
       <span className={cn("absolute inset-y-0 left-0 w-1 rounded-l-md", accents[tone])} />
       <div className="pl-1.5">
         <div className="text-xs uppercase tracking-wide text-nexus-muted">{label}</div>
@@ -1122,6 +1145,7 @@ function DealsPage({ deals: dealsProp, onMoveDeal, onRescue }: { deals: CrmDeal[
 
 function DealCard({ deal, onRescue }: { deal: CrmDeal; onRescue: (deal: CrmDeal) => void }) {
   const atRisk = deal.risk === "high" || (deal.risk === "medium" && deal.probability < 50);
+  const canRescue = atRisk && isActiveDeal(deal);
   return (
     <div className="rounded-md border border-nexus-border bg-black/30 p-3">
       <div className="mb-2 text-sm font-bold">{deal.title}</div>
@@ -1130,7 +1154,7 @@ function DealCard({ deal, onRescue }: { deal: CrmDeal; onRescue: (deal: CrmDeal)
         <span>{money(deal.amount)}</span>
         <Badge tone={deal.risk === "high" ? "red" : deal.risk === "low" ? "green" : "amber"}>{deal.probability}%</Badge>
       </div>
-      {atRisk && (
+      {canRescue && (
         <button
           onClick={() => onRescue(deal)}
           className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-nexus-red/40 bg-nexus-red/12 px-2 py-1.5 text-xs font-semibold text-red-100 transition hover:bg-nexus-red/20"
@@ -1348,7 +1372,7 @@ function NewDealModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Дата закрытия">
-              <input className={inputClass} value={closeDate} onChange={(event) => setCloseDate(event.target.value)} placeholder="28 июня" />
+              <input className={inputClass} type="date" value={closeDate} onChange={(event) => setCloseDate(event.target.value)} />
             </Field>
             <Field label="Вероятность, %">
               <input className={inputClass} type="number" min="0" max="100" value={probability} onChange={(event) => setProbability(event.target.value)} />
