@@ -66,6 +66,150 @@ export class AiController {
     };
   }
 
+  @Post("deals/:id/rescue")
+  async rescueDeal(@Param("id") id: string) {
+    const deal = await this.prisma.deal.findUniqueOrThrow({
+      where: { id },
+      include: {
+        client: { include: { activities: { orderBy: { createdAt: "desc" }, take: 1 } } },
+      },
+    });
+
+    const lastActivityAt = deal.client.activities[0]?.createdAt ?? deal.updatedAt;
+    const daysSinceActivity = Math.max(0, Math.floor((Date.now() - new Date(lastActivityAt).getTime()) / 86_400_000));
+    const plan = this.buildRescuePlan(deal, daysSinceActivity);
+    const enrichedEmail = await this.draftRescueEmail(deal, plan);
+    const emailDraft = enrichedEmail.body;
+
+    const insight = await this.prisma.aiInsight.create({
+      data: {
+        dealId: deal.id,
+        clientId: deal.clientId,
+        type: "deal_rescue",
+        title: "AI план спасения сделки",
+        score: plan.closeProbability,
+        message: `${plan.riskReason} Рекомендованный шаг: ${plan.nextSteps[0]}`,
+      },
+    });
+
+    await this.prisma.activity.create({
+      data: {
+        type: "ai_rescue",
+        summary: `AI создал план спасения сделки «${deal.title}» (${deal.client.name}): ${plan.nextSteps[0]}`,
+        clientId: deal.clientId,
+      },
+    });
+
+    return {
+      insightId: insight.id,
+      dealId: deal.id,
+      dealTitle: deal.title,
+      clientId: deal.clientId,
+      clientName: deal.client.name,
+      riskLevel: plan.riskLevel,
+      riskReason: plan.riskReason,
+      closeProbability: plan.closeProbability,
+      daysSinceActivity,
+      nextSteps: plan.nextSteps,
+      emailSubject: enrichedEmail.subject,
+      emailDraft,
+      emailModel: enrichedEmail.model,
+      recommendedTask: {
+        title: plan.nextSteps[0],
+        priority: plan.riskLevel === "high" ? "urgent" : "high",
+        clientId: deal.clientId,
+        dealId: deal.id,
+      },
+    };
+  }
+
+  private buildRescuePlan(
+    deal: { stage: string; probability: number; amount: Prisma.Decimal; riskLevel: string; client: { name: string; healthScore: number } },
+    daysSinceActivity: number,
+  ) {
+    const reasons: string[] = [];
+    if (daysSinceActivity >= 7) reasons.push(`нет активности ${daysSinceActivity} дн.`);
+    if (deal.probability < 60) reasons.push(`низкая вероятность закрытия (${deal.probability}%)`);
+    if (["Lead", "Contacted"].includes(deal.stage)) reasons.push(`сделка застряла на ранней стадии (${deal.stage})`);
+    if (deal.client.healthScore < 60) reasons.push(`низкий health score клиента (${deal.client.healthScore})`);
+    if (deal.riskLevel === "high") reasons.push("риск помечен как высокий");
+    if (!reasons.length) reasons.push("сделка требует подтверждения следующего шага, чтобы не потерять темп");
+
+    const closeProbability = Math.max(5, Math.min(95, Math.round(
+      deal.probability * 0.6 + deal.client.healthScore * 0.3 - daysSinceActivity * 1.5,
+    )));
+    const riskLevel: "low" | "medium" | "high" =
+      closeProbability >= 65 ? "low" : closeProbability >= 40 ? "medium" : "high";
+
+    const nextSteps = [
+      `Отправить follow-up клиенту ${deal.client.name} сегодня`,
+      "Предложить короткий 15-минутный созвон для снятия блокеров",
+      deal.stage === "Lead" || deal.stage === "Contacted"
+        ? "Согласовать критерии решения и продвинуть сделку на стадию Proposal"
+        : "Подтвердить бюджет и сроки закрытия в текущем квартале",
+    ];
+
+    return {
+      riskLevel,
+      riskReason: `Сделка в зоне риска: ${reasons.join(", ")}.`,
+      closeProbability,
+      nextSteps,
+    };
+  }
+
+  private async draftRescueEmail(
+    deal: { title: string; client: { name: string } },
+    plan: { nextSteps: string[] },
+  ) {
+    const subject = `Следующий шаг по проекту «${deal.title}»`;
+    const fallbackBody = [
+      `Здравствуйте, команда ${deal.client.name}!`,
+      "",
+      `Хотел свериться по проекту «${deal.title}». Чтобы двигаться дальше, предлагаю короткий созвон на 15 минут на этой неделе — обсудим открытые вопросы и план запуска.`,
+      "",
+      "Подскажите, какой день и время вам удобны? Со своей стороны подготовлю краткое резюме ценности и следующие шаги.",
+      "",
+      "С уважением,",
+      "команда NexusRM",
+    ].join("\n");
+
+    const apiKey = this.config.get<string>("DEEPSEEK_API_KEY");
+    if (!apiKey) {
+      return { subject, body: fallbackBody, model: "local-rescue-fallback" };
+    }
+
+    const baseUrl = this.config.get<string>("DEEPSEEK_BASE_URL") ?? "https://api.deepseek.com";
+    const model = this.config.get<string>("DEEPSEEK_MODEL") ?? "deepseek-v4-pro";
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Ты sales-менеджер CRM NexusRM. Напиши короткое деловое письмо клиенту по-русски (4-6 предложений), вежливое, без воды, с конкретным следующим шагом и призывом к короткому созвону. Верни только текст письма.",
+          },
+          {
+            role: "user",
+            content: `Сделка: «${deal.title}», клиент: ${deal.client.name}. Рекомендованные шаги: ${plan.nextSteps.join("; ")}.`,
+          },
+        ],
+        temperature: 0.4,
+        max_tokens: 500,
+        stream: false,
+      }),
+    }).catch(() => null);
+
+    if (!response || !response.ok) {
+      return { subject, body: fallbackBody, model: "local-rescue-fallback" };
+    }
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const body = payload.choices?.[0]?.message?.content?.trim();
+    return body ? { subject, body, model } : { subject, body: fallbackBody, model: "local-rescue-fallback" };
+  }
+
   @Public()
   @Post("chat")
   async chat(@Body() dto: AiChatDto) {

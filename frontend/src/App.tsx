@@ -8,6 +8,7 @@ import {
   Code2,
   KanbanSquare,
   LayoutDashboard,
+  LifeBuoy,
   Lock,
   LogOut,
   MessageCircle,
@@ -23,13 +24,16 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getApiErrorMessage, isExpiredTokenMessage } from "./lib/api";
 import {
   backendDealStageByUi,
+  buildRevenueSeries,
+  calculateConversionRate,
   clientDraftToPayload,
   clientToUpdatePayload,
   dealDraftToPayload,
+  isActiveDeal,
+  isDueToday,
   mapApiClient,
   mapApiDeal,
   mapApiTask,
@@ -43,7 +47,9 @@ import {
   type CrmDeal,
   type CrmTask,
   type DealDraft,
+  type DealRescuePlan,
   type DealStage,
+  type RevenueSeriesPoint,
   type TaskDraft,
   type TaskPriority,
   type TaskStatus,
@@ -76,6 +82,13 @@ type DashboardStats = {
   atRiskClients: CrmClient[];
   urgentTasks: CrmTask[];
   wonRevenue: number;
+};
+
+type NotificationItem = {
+  id: string;
+  kind: "urgent" | "today" | "risk";
+  title: string;
+  detail: string;
 };
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
@@ -161,6 +174,8 @@ export function App() {
   const [newDealOpen, setNewDealOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [rescueDeal, setRescueDeal] = useState<CrmDeal | null>(null);
   const [sessionNotice, setSessionNotice] = useState("");
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmError, setCrmError] = useState("");
@@ -243,6 +258,26 @@ export function App() {
     setPage("Задачи");
   }
 
+  async function rescueDealPlan(deal: CrmDeal) {
+    return authenticatedRequest<DealRescuePlan>(`/api/ai/deals/${deal.id}/rescue`, { method: "POST" });
+  }
+
+  async function createRescueTask(plan: DealRescuePlan) {
+    setCrmError("");
+    const created = await authenticatedRequest<unknown>("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        title: plan.recommendedTask.title,
+        priority: plan.recommendedTask.priority,
+        status: "todo",
+        clientId: plan.recommendedTask.clientId,
+        dealId: plan.recommendedTask.dealId,
+        dueDate: new Date().toISOString(),
+      }),
+    });
+    setTaskList((prev) => [mapApiTask(created as Parameters<typeof mapApiTask>[0]), ...prev]);
+  }
+
   async function moveTask(taskId: string, status: TaskStatus) {
     setTaskList((prev) => moveTaskStatus(prev, taskId, status));
     try {
@@ -268,18 +303,23 @@ export function App() {
   }
 
   const kpis = useMemo(
-    () => [
-      { label: "Всего клиентов", value: clientList.length.toString(), delta: "+18%", icon: Users },
-      { label: "Активные сделки", value: dealList.filter((deal) => !["Выиграна", "Проиграна"].includes(deal.stage)).length.toString(), delta: "+7", icon: KanbanSquare },
-      { label: "Pipeline", value: money(dealList.reduce((sum, deal) => sum + deal.amount, 0)), delta: "+24%", icon: BarChart3 },
-      { label: "Конверсия", value: "31%", delta: "+4.2%", icon: Activity },
-      { label: "Задачи на сегодня", value: taskList.filter((task) => task.due === "Сегодня").length.toString(), delta: "срочно", icon: Bell },
-    ],
-    [clientList.length, dealList, taskList],
+    () => {
+      const activeDeals = dealList.filter(isActiveDeal);
+      const todayTasks = taskList.filter((task) => isDueToday(task));
+      const urgentTodayTasks = todayTasks.filter((task) => task.priority === "urgent" && task.status !== "done");
+      return [
+        { label: "Всего клиентов", value: clientList.length.toString(), delta: `${clientList.filter((client) => client.status === "active").length} активных`, icon: Users },
+        { label: "Активные сделки", value: activeDeals.length.toString(), delta: `${dealList.length} всего`, icon: KanbanSquare },
+        { label: "Pipeline", value: money(activeDeals.reduce((sum, deal) => sum + deal.amount, 0)), delta: "активная воронка", icon: BarChart3 },
+        { label: "Конверсия", value: `${calculateConversionRate(dealList)}%`, delta: "won / closed", icon: Activity },
+        { label: "Задачи на сегодня", value: todayTasks.length.toString(), delta: `${urgentTodayTasks.length} срочно`, icon: Bell },
+      ];
+    },
+    [clientList, dealList, taskList],
   );
 
   const dashboardStats = useMemo<DashboardStats>(() => {
-    const activeDeals = dealList.filter((deal) => !["Выиграна", "Проиграна"].includes(deal.stage));
+    const activeDeals = dealList.filter(isActiveDeal);
     return {
       clients: clientList,
       deals: dealList,
@@ -292,8 +332,21 @@ export function App() {
     };
   }, [clientList, dealList, taskList]);
 
-  function switchPage(next: Page) {
-    setMobileNavOpen(false);
+  const notifications = useMemo<NotificationItem[]>(() => {
+    const items: NotificationItem[] = [];
+    taskList
+      .filter((task) => task.priority === "urgent" && task.status !== "done")
+      .forEach((task) => items.push({ id: `task-${task.id}`, kind: "urgent", title: task.title, detail: `Срочная задача · ${task.due}` }));
+    taskList
+      .filter((task) => isDueToday(task) && task.priority !== "urgent" && task.status !== "done")
+      .forEach((task) => items.push({ id: `today-${task.id}`, kind: "today", title: task.title, detail: "Задача на сегодня" }));
+    clientList
+      .filter((client) => client.status === "at_risk" || client.healthScore < 60)
+      .forEach((client) => items.push({ id: `client-${client.id}`, kind: "risk", title: client.name, detail: `Клиент в зоне риска · health ${client.healthScore}` }));
+    return items;
+  }, [clientList, taskList]);
+
+  function switchPage(next: Page) {    setMobileNavOpen(false);
     setLoading(true);
     setPage(next);
     window.setTimeout(() => setLoading(false), 420);
@@ -406,9 +459,19 @@ export function App() {
                 <Search className="absolute left-3 top-2.5 text-zinc-500" size={18} />
                 <input className="h-10 w-full rounded-md border border-nexus-border bg-white/[0.03] pl-10 pr-3 text-sm outline-none ring-nexus-red/60 placeholder:text-zinc-600 focus:ring-2" placeholder="Поиск клиентов, сделок, задач..." />
               </div>
-              <GhostButton className="hidden size-10 shrink-0 px-0 sm:inline-flex" aria-label="Уведомления">
-                <Bell size={18} />
-              </GhostButton>
+              <div className="relative hidden shrink-0 sm:block">
+                <GhostButton className="size-10 px-0" aria-label="Уведомления" onClick={() => setNotificationsOpen((prev) => !prev)}>
+                  <Bell size={18} />
+                  {notifications.length > 0 ? (
+                    <span className="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-nexus-red text-[10px] font-bold text-white">
+                      {notifications.length > 9 ? "9+" : notifications.length}
+                    </span>
+                  ) : null}
+                </GhostButton>
+                {notificationsOpen ? (
+                  <NotificationsPanel notifications={notifications} onClose={() => setNotificationsOpen(false)} />
+                ) : null}
+              </div>
               {createActionLabel ? (
                 <Button className="shrink-0 px-3 md:px-4" onClick={() => page === "Задачи" ? setNewTaskOpen(true) : page === "Клиенты" ? setNewClientOpen(true) : setNewDealOpen(true)}>
                   <Plus size={18} />
@@ -428,7 +491,7 @@ export function App() {
             {!loading && !crmLoading && page === "Дашборд" && <Dashboard kpis={kpis} stats={dashboardStats} />}
             {!loading && page === "Клиенты" && <ClientsPage clients={clientList} onCreateClient={() => setNewClientOpen(true)} onSelect={(client) => { setSelectedClient(client); switchPage("Профиль клиента"); }} />}
             {!loading && page === "Профиль клиента" && (selectedClient ? <ClientProfile client={selectedClient} deals={dealList} onUpdateClient={updateClient} /> : <EmptyState title="Клиент не выбран" detail="Откройте клиента из списка." />)}
-            {!loading && page === "Сделки" && <DealsPage deals={dealList} onMoveDeal={moveDeal} />}
+            {!loading && page === "Сделки" && <DealsPage deals={dealList} onMoveDeal={moveDeal} onRescue={setRescueDeal} />}
             {!loading && page === "Задачи" && <TasksPage tasks={taskList} onMoveTask={moveTask} onCreateTask={() => setNewTaskOpen(true)} />}
             {!loading && page === "AI Ассистент" && <AiPage stats={dashboardStats} />}
             {!loading && page === "API Документация" && <ApiDocsPage />}
@@ -440,12 +503,55 @@ export function App() {
       {newClientOpen && <NewClientModal onClose={() => setNewClientOpen(false)} onCreate={createClient} />}
       {newDealOpen && <NewDealModal clients={clientList} onClose={() => setNewDealOpen(false)} onCreate={createDeal} />}
       {newTaskOpen && <NewTaskModal clients={clientList} onClose={() => setNewTaskOpen(false)} onCreate={createTask} />}
+      {rescueDeal && (
+        <DealRescueModal
+          deal={rescueDeal}
+          loadPlan={rescueDealPlan}
+          onCreateTask={createRescueTask}
+          onClose={() => setRescueDeal(null)}
+        />
+      )}
     </div>
   );
 }
 
-function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; onNavigate: (next: Page) => void }) {
+function NotificationsPanel({ notifications, onClose }: { notifications: NotificationItem[]; onClose: () => void }) {
+  const accent: Record<NotificationItem["kind"], string> = {
+    urgent: "bg-nexus-red",
+    today: "bg-amber-400",
+    risk: "bg-orange-400",
+  };
   return (
+    <>
+      <div className="fixed inset-0 z-30" onClick={onClose} aria-hidden />
+      <div className="absolute right-0 top-12 z-40 w-80 overflow-hidden rounded-lg border border-nexus-border bg-nexus-bg shadow-xl">
+        <div className="flex items-center justify-between border-b border-nexus-border px-4 py-3">
+          <span className="text-sm font-semibold">Уведомления</span>
+          <GhostButton className="size-7 px-0" onClick={onClose} aria-label="Закрыть">
+            <X size={15} />
+          </GhostButton>
+        </div>
+        {notifications.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-nexus-muted">Нет новых уведомлений</div>
+        ) : (
+          <ul className="max-h-96 divide-y divide-nexus-border overflow-y-auto">
+            {notifications.map((item) => (
+              <li key={item.id} className="flex gap-3 px-4 py-3">
+                <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", accent[item.kind])} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{item.title}</div>
+                  <div className="truncate text-xs text-nexus-muted">{item.detail}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+}
+
+function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; onNavigate: (next: Page) => void }) {  return (
     <nav className="space-y-1">
       {items.map((item) => (
         <button
@@ -555,34 +661,17 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold">Прогноз выручки</h2>
-              <p className="text-sm text-nexus-muted">Взвешенный forecast: {money(Math.round(stats.weightedForecast))}</p>
+              <p className="text-sm text-nexus-muted">Взвешенный прогноз: {money(Math.round(stats.weightedForecast))}</p>
             </div>
-            <Badge tone="red">AI прогноз</Badge>
+            <Badge tone="red">Взвешенный прогноз</Badge>
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueSeries}>
-                <defs>
-                  <linearGradient id="rev" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#FF2D2D" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#FF2D2D" stopOpacity={0.03} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#2A2A32" vertical={false} />
-                <XAxis dataKey="month" stroke="#A1A1AA" />
-                <YAxis stroke="#A1A1AA" />
-                <Tooltip contentStyle={{ background: "#111116", border: "1px solid #2A2A32", borderRadius: 8 }} />
-                <Area type="monotone" dataKey="revenue" stroke="#FF2D2D" fill="url(#rev)" strokeWidth={3} />
-                <Area type="monotone" dataKey="forecast" stroke="#A1A1AA" fill="transparent" strokeDasharray="5 5" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <RevenueChart data={revenueSeries} />
         </Card>
 
         <Card className="p-5">
           <h2 className="mb-4 text-lg font-bold">Операционная сводка</h2>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${stats.deals.length} сделок всего`} />
+            <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${stats.deals.filter(isActiveDeal).length} активных сделок`} />
             <MetricTile label="Won revenue" value={money(stats.wonRevenue)} detail="закрытая выручка" />
             <MetricTile label="Клиенты в риске" value={stats.atRiskClients.length.toString()} detail={stats.atRiskClients[0]?.name ?? "критичных нет"} tone={stats.atRiskClients.length ? "red" : "green"} />
             <MetricTile label="Срочные задачи" value={stats.urgentTasks.length.toString()} detail={stats.urgentTasks[0]?.title ?? "нет просрочки"} tone={stats.urgentTasks.length ? "amber" : "green"} />
@@ -618,17 +707,7 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
         </Card>
         <Card className="p-5">
           <h2 className="mb-4 text-lg font-bold">Воронка конверсии</h2>
-          <div className="h-60">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={conversionSeries}>
-                <CartesianGrid stroke="#2A2A32" vertical={false} />
-                <XAxis dataKey="stage" stroke="#A1A1AA" />
-                <YAxis stroke="#A1A1AA" />
-                <Tooltip contentStyle={{ background: "#111116", border: "1px solid #2A2A32", borderRadius: 8 }} />
-                <Bar dataKey="value" fill="#E50914" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <FunnelBars data={conversionSeries} />
         </Card>
       </section>
 
@@ -649,6 +728,77 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
   );
 }
 
+function RevenueChart({ data }: { data: RevenueSeriesPoint[] }) {
+  const width = 720;
+  const height = 260;
+  const padding = { top: 18, right: 24, bottom: 34, left: 58 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const values = data.flatMap((point) => [point.revenue, point.forecast]).filter((value): value is number => typeof value === "number");
+  const maxValue = Math.max(1, ...values);
+  const yMax = Math.ceil(maxValue / 15000) * 15000;
+  const ticks = [0, Math.round(yMax / 3), Math.round((yMax / 3) * 2), yMax];
+
+  function x(index: number) {
+    return padding.left + (data.length <= 1 ? plotWidth / 2 : (plotWidth / (data.length - 1)) * index);
+  }
+
+  function y(value: number) {
+    return padding.top + plotHeight - (value / yMax) * plotHeight;
+  }
+
+  function points(key: "revenue" | "forecast") {
+    return data
+      .map((point, index) => (typeof point[key] === "number" ? `${x(index)},${y(point[key])}` : ""))
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return (
+    <div className="h-72 overflow-hidden">
+      <svg className="size-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Прогноз выручки по месяцам">
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={padding.left} x2={width - padding.right} y1={y(tick)} y2={y(tick)} stroke="#2A2A32" />
+            <text x={padding.left - 10} y={y(tick) + 4} textAnchor="end" className="fill-zinc-400 text-[12px]">{tick.toLocaleString("ru-RU")}</text>
+          </g>
+        ))}
+        <line x1={padding.left} x2={padding.left} y1={padding.top} y2={height - padding.bottom} stroke="#A1A1AA" />
+        <line x1={padding.left} x2={width - padding.right} y1={height - padding.bottom} y2={height - padding.bottom} stroke="#A1A1AA" />
+        {points("forecast") ? <polyline points={points("forecast")} fill="none" stroke="#A1A1AA" strokeDasharray="6 6" strokeWidth="2.5" /> : null}
+        {points("revenue") ? <polyline points={points("revenue")} fill="none" stroke="#FF2D2D" strokeWidth="3" /> : null}
+        {data.map((point, index) => (
+          <g key={`${point.month}-${index}`}>
+            {typeof point.forecast === "number" ? <circle cx={x(index)} cy={y(point.forecast)} r="4.5" fill="#0B0B0F" stroke="#A1A1AA" strokeWidth="2.5"><title>{`${point.month}: прогноз ${money(point.forecast)}`}</title></circle> : null}
+            {typeof point.revenue === "number" ? <circle cx={x(index)} cy={y(point.revenue)} r="5" fill="#0B0B0F" stroke="#FF2D2D" strokeWidth="3"><title>{`${point.month}: выручка ${money(point.revenue)}`}</title></circle> : null}
+            <text x={x(index)} y={height - 12} textAnchor="middle" className="fill-zinc-400 text-[13px]">{point.month}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function FunnelBars({ data }: { data: { stage: DealStage; value: number }[] }) {
+  const maxValue = Math.max(1, ...data.map((item) => item.value));
+
+  return (
+    <div className="space-y-3">
+      {data.map((item) => (
+        <div key={item.stage} className="rounded-md border border-nexus-border bg-white/[0.025] p-3">
+          <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+            <span className="font-bold">{item.stage}</span>
+            <Badge>{item.value}</Badge>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+            <div className="h-full rounded-full bg-nexus-red" style={{ width: `${Math.max(8, (item.value / maxValue) * 100)}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MetricTile({ label, value, detail, tone = "default" }: { label: string; value: string; detail: string; tone?: "default" | "red" | "green" | "amber" }) {
   const tones = {
     default: "border-nexus-border bg-white/[0.025]",
@@ -663,21 +813,6 @@ function MetricTile({ label, value, detail, tone = "default" }: { label: string;
       <div className="mt-1 text-xs text-zinc-400">{detail}</div>
     </div>
   );
-}
-
-function buildRevenueSeries(deals: CrmDeal[]) {
-  const months = new Map<string, { month: string; revenue: number; forecast: number }>();
-  deals.forEach((deal) => {
-    const date = new Date(deal.closeDateIso);
-    const month = Number.isNaN(date.getTime()) ? "Без даты" : new Intl.DateTimeFormat("ru-RU", { month: "short" }).format(date);
-    const current = months.get(month) ?? { month, revenue: 0, forecast: 0 };
-    months.set(month, {
-      month,
-      revenue: deal.stage === "Выиграна" ? current.revenue + deal.amount : current.revenue,
-      forecast: current.forecast + deal.amount * (deal.probability / 100),
-    });
-  });
-  return Array.from(months.values()).length ? Array.from(months.values()) : [{ month: "Нет данных", revenue: 0, forecast: 0 }];
 }
 
 function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: (client: ClientDraft) => void }) {
@@ -876,7 +1011,7 @@ function ClientProfile({ client, deals, onUpdateClient }: { client: CrmClient; d
   );
 }
 
-function DealsPage({ deals: dealsProp, onMoveDeal }: { deals: CrmDeal[]; onMoveDeal: (dealId: string, stage: DealStage) => void }) {
+function DealsPage({ deals: dealsProp, onMoveDeal, onRescue }: { deals: CrmDeal[]; onMoveDeal: (dealId: string, stage: DealStage) => void; onRescue: (deal: CrmDeal) => void }) {
   const [draggingDealId, setDraggingDealId] = useState("");
 
   return (
@@ -914,7 +1049,7 @@ function DealsPage({ deals: dealsProp, onMoveDeal }: { deals: CrmDeal[]; onMoveD
                   onDragEnd={() => setDraggingDealId("")}
                   className={cn("cursor-grab active:cursor-grabbing", draggingDealId === deal.id && "opacity-50")}
                 >
-                  <DealCard deal={deal} />
+                  <DealCard deal={deal} onRescue={onRescue} />
                 </div>
               ))}
               {!stageDeals.length && <EmptyState title="Пусто" detail="Переместите сделку сюда." compact />}
@@ -927,7 +1062,8 @@ function DealsPage({ deals: dealsProp, onMoveDeal }: { deals: CrmDeal[]; onMoveD
   );
 }
 
-function DealCard({ deal }: { deal: CrmDeal }) {
+function DealCard({ deal, onRescue }: { deal: CrmDeal; onRescue: (deal: CrmDeal) => void }) {
+  const atRisk = deal.risk === "high" || (deal.risk === "medium" && deal.probability < 50);
   return (
     <div className="rounded-md border border-nexus-border bg-black/30 p-3">
       <div className="mb-2 text-sm font-bold">{deal.title}</div>
@@ -936,6 +1072,161 @@ function DealCard({ deal }: { deal: CrmDeal }) {
         <span>{money(deal.amount)}</span>
         <Badge tone={deal.risk === "high" ? "red" : deal.risk === "low" ? "green" : "amber"}>{deal.probability}%</Badge>
       </div>
+      {atRisk && (
+        <button
+          onClick={() => onRescue(deal)}
+          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-nexus-red/40 bg-nexus-red/12 px-2 py-1.5 text-xs font-semibold text-red-100 transition hover:bg-nexus-red/20"
+        >
+          <LifeBuoy size={14} />
+          AI Rescue
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DealRescueModal({
+  deal,
+  loadPlan,
+  onCreateTask,
+  onClose,
+}: {
+  deal: CrmDeal;
+  loadPlan: (deal: CrmDeal) => Promise<DealRescuePlan>;
+  onCreateTask: (plan: DealRescuePlan) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [plan, setPlan] = useState<DealRescuePlan | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [taskCreated, setTaskCreated] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+    loadPlan(deal)
+      .then((result) => {
+        if (active) setPlan(result);
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Не удалось построить план спасения");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [deal.id]);
+
+  async function handleCreateTask() {
+    if (!plan) return;
+    setCreatingTask(true);
+    setError("");
+    try {
+      await onCreateTask(plan);
+      setTaskCreated(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать задачу");
+    } finally {
+      setCreatingTask(false);
+    }
+  }
+
+  async function handleCopyEmail() {
+    if (!plan) return;
+    try {
+      await navigator.clipboard.writeText(plan.emailDraft);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Не удалось скопировать письмо в буфер обмена");
+    }
+  }
+
+  const riskTone = plan?.riskLevel === "high" ? "red" : plan?.riskLevel === "low" ? "green" : "amber";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-xl overflow-y-auto p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <LifeBuoy size={20} className="text-nexus-red" />
+            <h2 className="text-lg font-bold">AI-режим спасения сделки</h2>
+          </div>
+          <GhostButton className="size-8 px-0" onClick={onClose} aria-label="Закрыть">
+            <X size={16} />
+          </GhostButton>
+        </div>
+
+        <div className="mb-4">
+          <div className="text-sm font-bold">{deal.title}</div>
+          <div className="text-xs text-nexus-muted">{deal.client}</div>
+        </div>
+
+        {loading && (
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        )}
+
+        {error && !loading ? (
+          <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{error}</div>
+        ) : null}
+
+        {plan && !loading && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={riskTone}>Риск: {plan.riskLevel === "high" ? "высокий" : plan.riskLevel === "low" ? "низкий" : "средний"}</Badge>
+              <Badge>Вероятность закрытия: {plan.closeProbability}%</Badge>
+              <Badge>Без активности: {plan.daysSinceActivity} дн.</Badge>
+            </div>
+
+            <div className="rounded-md border border-nexus-border bg-black/20 p-3">
+              <div className="mb-1 text-xs font-bold uppercase text-nexus-muted">Причина риска</div>
+              <p className="text-sm">{plan.riskReason}</p>
+            </div>
+
+            <div>
+              <div className="mb-2 text-xs font-bold uppercase text-nexus-muted">Рекомендованные шаги</div>
+              <ol className="space-y-1.5">
+                {plan.nextSteps.map((step, index) => (
+                  <li key={index} className="flex gap-2 text-sm">
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-nexus-red/15 text-xs font-bold text-red-100">{index + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs font-bold uppercase text-nexus-muted">Черновик письма</div>
+                <span className="text-[10px] text-nexus-muted">{plan.emailModel}</span>
+              </div>
+              <div className="rounded-md border border-nexus-border bg-black/20 p-3">
+                <div className="mb-1 text-sm font-semibold">{plan.emailSubject}</div>
+                <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-300">{plan.emailDraft}</pre>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={handleCreateTask} disabled={creatingTask || taskCreated}>
+                {taskCreated ? <CheckCircle2 size={16} /> : <Plus size={16} />}
+                {taskCreated ? "Задача создана" : creatingTask ? "Создаём..." : "Создать задачу"}
+              </Button>
+              <GhostButton onClick={handleCopyEmail}>
+                {copied ? "Скопировано" : "Скопировать письмо"}
+              </GhostButton>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -1251,11 +1542,11 @@ function AiPage({ stats }: { stats: DashboardStats }) {
               key={`${item.role}-${index}`}
               className={cn(
                 "rounded-md border p-4 text-sm leading-6 shadow-sm",
-                item.role === "user" ? "ml-8 border-zinc-700 bg-white/[0.04]" : "mr-8 border-red-500/20 bg-red-500/8",
+                item.role === "user" ? "ml-4 border-zinc-700 bg-white/[0.04] sm:ml-8" : "mr-4 border-red-500/20 bg-red-500/8 sm:mr-8",
               )}
             >
               <div className="mb-1 text-xs font-bold uppercase text-nexus-muted">{item.role === "user" ? "Вы" : "Nexus AI"}</div>
-              {item.text}
+              <ChatMessage text={item.text} />
             </div>
           ))}
           {loading ? <div className="rounded-md border border-nexus-border bg-white/[0.025] p-4 text-sm text-nexus-muted">AI анализирует CRM-контекст...</div> : null}
@@ -1267,7 +1558,7 @@ function AiPage({ stats }: { stats: DashboardStats }) {
             onKeyDown={(event) => {
               if (event.key === "Enter") void sendMessage();
             }}
-            className="min-w-0 flex-1 rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60"
+            className="h-11 min-w-0 flex-1 rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60"
             placeholder="Спросите про клиентов, сделки или риски..."
           />
           <Button className="px-5" onClick={() => void sendMessage()} disabled={loading}>
@@ -1278,6 +1569,49 @@ function AiPage({ stats }: { stats: DashboardStats }) {
       </Card>
     </div>
   );
+}
+
+function ChatMessage({ text }: { text: string }) {
+  const blocks = text.trim().split(/\n{2,}/).filter(Boolean);
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, blockIndex) => {
+        const lines = block.split("\n");
+        const isList = lines.every((line) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(line));
+        if (isList) {
+          return (
+            <ul key={blockIndex} className="list-disc space-y-1 pl-5">
+              {lines.map((line, lineIndex) => (
+                <li key={lineIndex}>{renderInline(line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, ""))}</li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={blockIndex} className="whitespace-pre-wrap break-words">
+            {lines.map((line, lineIndex) => (
+              <span key={lineIndex}>
+                {renderInline(line)}
+                {lineIndex < lines.length - 1 ? <br /> : null}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index} className="font-bold text-white">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index} className="rounded bg-black/40 px-1 py-0.5 text-xs text-red-100">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
 }
 
 function makeLocalAiAnswer(question: string, stats: DashboardStats, reason: string) {

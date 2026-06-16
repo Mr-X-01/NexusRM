@@ -14,9 +14,24 @@
 
 ## Что такое NexusRM
 
-NexusRM - hackathon-ready CRM с темным SaaS-интерфейсом, backend API, PostgreSQL, ролями, демо-данными, AI-инсайтами, публичным API и автоматическим production-деплоем на VPS.
+NexusRM — это production-ready CRM-платформа для B2B-команд: единая база клиентов, сделок и задач, sales-аналитика, AI-ассистент и публичный API для интеграций. Система построена на типобезопасном стеке (NestJS + Prisma + React) и поставляется с автоматическим деплоем на VPS под HTTPS одной командой.
 
-Проект можно показать как готовый продукт: есть дашборд, клиенты, сделки, задачи, AI Ассистент, API Документация, админ-панель и установка на сервер одной командой.
+В отличие от набора разрозненных скриптов, NexusRM — это цельный продукт: backend с ролевой моделью и audit logs, frontend с дашбордом, Kanban-воронкой, профилями клиентов и AI Deal Rescue, а также документированный REST API со Swagger. Всё, от схемы базы до reverse proxy, описано в коде и инфраструктуре репозитория.
+
+### Кому подходит
+
+- B2B IT-компаниям, digital-агентствам, консалтингу и outsourcing-командам;
+- командам, которым нужна self-hosted CRM с полным контролем над данными;
+- разработчикам, которым важен открытый REST API и возможность дорабатывать продукт под себя.
+
+### Документация
+
+| Документ | Содержание |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | Архитектура, разделение backend по доменам, поток данных |
+| [docs/api.md](docs/api.md) | REST API: авторизация, админ-маршруты, AI-чат, публичный API |
+| [docs/security.md](docs/security.md) | Модель безопасности и памятка для production |
+| [FEATURES.md](FEATURES.md) | Полный список возможностей продукта |
 
 ## Установка на сервер одной командой
 
@@ -88,18 +103,6 @@ curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server
 
 Повторный запуск той же команды работает как обновление. Секреты и пароль базы сохраняются. Если CRM-данные уже есть, установщик не перезаписывает клиентов, сделки и задачи, но безопасно обновляет системные аккаунты, роли, настройки workspace и demo API key.
 
-## График демо-метрик
-
-![График pipeline и выручки NexusRM](docs/assets/pipeline-chart.png)
-
-| Метрика | Значение | Что показывает |
-| --- | ---: | --- |
-| Клиенты | `3` | демо-база активных B2B клиентов |
-| Pipeline | `$122,500` | сумма открытых и выигранных сделок |
-| Прогноз месяца | `$42,000` | AI-прогноз выручки |
-| Конверсия | `31%` | состояние sales funnel |
-| Риск | `RedForge` | клиент без активности 14 дней |
-
 ## Возможности
 
 Полный список есть в [FEATURES.md](FEATURES.md).
@@ -112,12 +115,13 @@ curl -fsSL https://raw.githubusercontent.com/Mr-X-01/NexusRM/main/install-server
 - реальные профили пользователей: должность, отдел, статус, последний вход;
 - расширенная админ-панель: пользователи, системные настройки, API-ключи, audit logs и сводка объектов;
 - Kanban pipeline сделок;
-- AI sales mock: оценка сделок, health score, прогноз и поиск рисков;
-- AI чат через DeepSeek при наличии `DEEPSEEK_API_KEY`;
+- AI sales-аналитика: оценка сделок, health score, прогноз выручки и поиск рисков;
+- AI Deal Rescue: разбор причины риска по сделке, рекомендованные шаги, генерация follow-up письма и создание задачи в один клик;
+- AI чат через DeepSeek с детерминированным локальным fallback, если `DEEPSEEK_API_KEY` не задан;
 - публичный API для интеграций с ключом `x-api-key`;
 - Swagger/OpenAPI документация;
 - встроенная API-документация в интерфейсе, если Swagger временно недоступен;
-- адаптивный premium dark UI для демо и презентации.
+- адаптивный premium dark UI с поддержкой мобильных устройств.
 
 ## Локальный запуск
 
@@ -164,14 +168,43 @@ dig crm.example.com
 curl -I http://crm.example.com
 ```
 
-## Стек
+## Стек и обоснование выбора
 
-| Слой | Технологии |
-| --- | --- |
-| Backend | Node.js, NestJS, Prisma, PostgreSQL, Swagger, JWT, bcrypt |
-| Frontend | React, TypeScript, Vite, Tailwind CSS, Recharts, lucide-react |
-| Безопасность | Helmet, CORS, ValidationPipe, RBAC, API keys, audit logs |
-| Deploy | Docker, Docker Compose, Caddy, Let's Encrypt, bash installer |
+Подробное описание архитектуры — в [docs/architecture.md](docs/architecture.md).
+
+| Слой | Технологии | Почему именно так |
+| --- | --- | --- |
+| Backend | Node.js 22, NestJS 11, Prisma, PostgreSQL 16, Swagger, JWT, bcrypt | NestJS даёт модульную структуру и DI, что упрощает разделение по доменам (auth, clients, deals, tasks, ai, admin). Prisma — типобезопасный доступ к данным и миграции из коробки. PostgreSQL выбран за надёжность, реляционную целостность и поддержку JSON для гибких полей. |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, Recharts, lucide-react | Vite даёт быструю сборку и HMR. Tailwind — консистентный дизайн без отдельного CSS-слоя. Recharts строит графики pipeline и выручки. TypeScript держит контракт с API в одном типовом пространстве. |
+| Безопасность | Helmet, CORS, ValidationPipe, RBAC, API keys, audit logs, rate limiting | Многослойная защита: заголовки, валидация DTO в whitelist-режиме, ролевые guard'ы и журналирование чувствительных действий. Детали — в [docs/security.md](docs/security.md). |
+| AI | DeepSeek API с детерминированным локальным fallback | Живой AI-чат и генерация follow-up работают через внешний LLM при наличии `DEEPSEEK_API_KEY`, но при его отсутствии система не ломается — отвечает локальный CRM-движок на основе реальных данных. |
+| Deploy | Docker, Docker Compose, Caddy, Let's Encrypt, bash installer | Контейнеризация делает окружение воспроизводимым. Caddy автоматически выпускает и продлевает HTTPS-сертификаты. Один bash-скрипт разворачивает весь стек на чистом VPS. |
+
+### Как устроен backend
+
+Backend разделён по продуктовым доменам, каждый со своим контроллером и DTO-валидацией:
+
+- `auth` — регистрация, JWT access/refresh, текущий пользователь;
+- `clients` / `deals` / `tasks` — CRM-ядро с RBAC и audit logs;
+- `ai` — инсайты, scoring сделок, AI Deal Rescue и чат с LLM;
+- `public` — integration endpoints за `x-api-key`;
+- `admin` — пользователи, настройки workspace, API-ключи, audit logs.
+
+Полный поток данных (login → Bearer JWT → RBAC → мутация → audit log) описан в [docs/architecture.md](docs/architecture.md), а контракты маршрутов — в [docs/api.md](docs/api.md).
+
+## Демо-данные и метрики
+
+После первого деплоя база заполняется демонстрационным набором, чтобы продукт можно было оценить сразу. Установщик не перезаписывает реальные данные при повторных запусках.
+
+![График pipeline и выручки NexusRM](docs/assets/pipeline-chart.png)
+
+| Метрика | Значение | Что показывает |
+| --- | ---: | --- |
+| Клиенты | `3` | стартовая база активных B2B-клиентов |
+| Pipeline | `$122,500` | сумма открытых и выигранных сделок |
+| Прогноз месяца | `$42,000` | AI-прогноз выручки |
+| Конверсия | `31%` | состояние sales funnel |
+| Риск | `RedForge` | клиент без активности 14 дней |
 
 ## Структура проекта
 

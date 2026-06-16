@@ -64,6 +64,34 @@ export type CrmTask = {
   priority: TaskPriority;
 };
 
+export type RevenueSeriesPoint = {
+  month: string;
+  revenue: number | null;
+  forecast: number | null;
+};
+
+export type DealRescuePlan = {
+  insightId: string;
+  dealId: string;
+  dealTitle: string;
+  clientId: string;
+  clientName: string;
+  riskLevel: "low" | "medium" | "high";
+  riskReason: string;
+  closeProbability: number;
+  daysSinceActivity: number;
+  nextSteps: string[];
+  emailSubject: string;
+  emailDraft: string;
+  emailModel: string;
+  recommendedTask: {
+    title: string;
+    priority: TaskPriority;
+    clientId: string;
+    dealId: string;
+  };
+};
+
 export type ClientDraft = {
   name: string;
   industry: string;
@@ -219,6 +247,46 @@ export function moveDealStage(deals: CrmDeal[], dealId: string, stage: DealStage
 
 export function moveTaskStatus(tasks: CrmTask[], taskId: string, status: TaskStatus) {
   return tasks.map((task) => (task.id === taskId ? { ...task, status } : task));
+}
+
+export function isActiveDeal(deal: Pick<CrmDeal, "stage">) {
+  return !["Выиграна", "Проиграна"].includes(deal.stage);
+}
+
+export function calculateConversionRate(deals: Pick<CrmDeal, "stage">[]) {
+  const closedDeals = deals.filter((deal) => ["Выиграна", "Проиграна"].includes(deal.stage));
+  if (!closedDeals.length) return 0;
+  const wonDeals = closedDeals.filter((deal) => deal.stage === "Выиграна");
+  return Math.round((wonDeals.length / closedDeals.length) * 100);
+}
+
+export function isDueToday(task: Pick<CrmTask, "dueDateIso">, now = new Date()) {
+  const dueDate = new Date(task.dueDateIso);
+  if (Number.isNaN(dueDate.getTime())) return false;
+  return dueDate.toDateString() === now.toDateString();
+}
+
+export function buildRevenueSeries(deals: CrmDeal[]): RevenueSeriesPoint[] {
+  const months = new Map<string, { month: string; sortKey: string; revenue: number; forecast: number }>();
+  deals.forEach((deal) => {
+    const date = new Date(deal.closeDateIso);
+    const sortKey = Number.isNaN(date.getTime()) ? "9999-99" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const month = Number.isNaN(date.getTime()) ? "Без даты" : new Intl.DateTimeFormat("ru-RU", { month: "short" }).format(date);
+    const current = months.get(sortKey) ?? { month, sortKey, revenue: 0, forecast: 0 };
+    months.set(sortKey, {
+      ...current,
+      revenue: deal.stage === "Выиграна" ? current.revenue + deal.amount : current.revenue,
+      forecast: isActiveDeal(deal) ? current.forecast + deal.amount * (deal.probability / 100) : current.forecast,
+    });
+  });
+  const series = Array.from(months.values())
+    .sort((left, right) => left.sortKey.localeCompare(right.sortKey))
+    .map(({ month, revenue, forecast }) => ({
+      month,
+      revenue: revenue > 0 ? revenue : null,
+      forecast: forecast > 0 ? forecast : null,
+    }));
+  return series.length ? series : [{ month: "Нет данных", revenue: null, forecast: null }];
 }
 
 export function buildClient(draft: ClientDraft): CrmClient {
