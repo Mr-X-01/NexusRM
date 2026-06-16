@@ -6,18 +6,18 @@ export default {
     extend: {
       colors: {
         nexus: {
-          bg: "#050505",
-          bg2: "#0B0B0F",
-          card: "#111116",
-          card2: "#17171F",
+          bg: "#FFFFFF",
+          bg2: "#F6F7FB",
+          card: "#FFFFFF",
+          card2: "#F9FAFB",
           red: "#FF2D2D",
           accent: "#E50914",
-          border: "#2A2A32",
-          muted: "#A1A1AA",
+          border: "#E5E7EB",
+          muted: "#667085",
         },
       },
       boxShadow: {
-        red: "0 0 40px rgba(255, 45, 45, 0.18)",
+        red: "0 18px 48px rgba(15, 23, 42, 0.08)",
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "Segoe UI", "sans-serif"],

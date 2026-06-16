@@ -273,10 +273,17 @@ export function buildRevenueSeries(deals: CrmDeal[]): RevenueSeriesPoint[] {
     const sortKey = Number.isNaN(date.getTime()) ? "9999-99" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     const month = Number.isNaN(date.getTime()) ? "Без даты" : new Intl.DateTimeFormat("ru-RU", { month: "short" }).format(date);
     const current = months.get(sortKey) ?? { month, sortKey, revenue: 0, forecast: 0 };
+    const expectedAmount =
+      deal.stage === "Проиграна"
+        ? 0
+        : deal.stage === "Выиграна"
+          ? deal.amount
+          : deal.amount * (deal.probability / 100);
+
     months.set(sortKey, {
       ...current,
-      revenue: deal.stage === "Выиграна" ? current.revenue + deal.amount : current.revenue,
-      forecast: isActiveDeal(deal) ? current.forecast + deal.amount * (deal.probability / 100) : current.forecast,
+      revenue: deal.stage === "Проиграна" ? current.revenue : current.revenue + deal.amount,
+      forecast: current.forecast + expectedAmount,
     });
   });
   const series = Array.from(months.values())

@@ -12,6 +12,7 @@ import {
   Lock,
   LogOut,
   MessageCircle,
+  Moon,
   PanelLeft,
   Plus,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Sun,
   TrendingUp,
   Users,
   X,
@@ -92,9 +94,11 @@ type NotificationItem = {
   title: string;
   detail: string;
 };
+type ThemeMode = "light" | "dark";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 const sessionKey = "nexusrm.session";
+const themeKey = "nexusrm.theme";
 const defaultWorkspaceSettings: WorkspaceSettings = {
   workspaceName: "NexusRM",
   timezone: "Europe/Moscow",
@@ -122,6 +126,15 @@ async function apiRequest<T>(path: string, options: RequestInit = {}, token?: st
 
 function isExpiredTokenError(error: unknown) {
   return error instanceof Error && isExpiredTokenMessage(error.message);
+}
+
+function renderNotificationBadge(count: number) {
+  if (count <= 0) return null;
+  return (
+    <span className="absolute right-1.5 top-1.5 flex min-w-4 items-center justify-center rounded-full bg-nexus-red px-1 text-[10px] font-bold leading-4 text-white">
+      {count > 9 ? "9+" : count}
+    </span>
+  );
 }
 
 const nav: { label: Page; icon: typeof LayoutDashboard }[] = [
@@ -181,6 +194,15 @@ export function App() {
   const [sessionNotice, setSessionNotice] = useState("");
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmError, setCrmError] = useState("");
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const stored = localStorage.getItem(themeKey);
+    return stored === "light" || stored === "dark" ? stored : "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(themeKey, theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!session) return;
@@ -395,15 +417,19 @@ export function App() {
     setPage("Дашборд");
   }
 
-  if (!session) return <LoginScreen onLogin={login} notice={sessionNotice} />;
+  function toggleTheme() {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }
+
+  if (!session) return <LoginScreen onLogin={login} notice={sessionNotice} theme={theme} onToggleTheme={toggleTheme} />;
 
   const visibleNav = nav.filter((item) => session.user.role === "admin" || !["Админ-панель", "Настройки", "API Документация"].includes(item.label));
   const createActionLabel = page === "Задачи" ? "Новая задача" : page === "Клиенты" ? "Новый клиент" : page === "Сделки" || page === "Дашборд" ? "Новая сделка" : "";
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(255,45,45,0.18),transparent_34%),linear-gradient(180deg,#050505,#0B0B0F)] text-white">
+    <div className="app-shell min-h-screen">
       <div className="flex min-h-screen">
-        <aside className="hidden w-72 shrink-0 border-r border-nexus-border bg-black/45 p-5 lg:block">
+        <aside className="app-sidebar hidden w-72 shrink-0 border-r border-nexus-border p-5 lg:block">
           <div className="mb-8 flex items-center gap-3">
             <img className="size-11 rounded-lg shadow-red" src="/logo.png" alt="Логотип NexusRM" />
             <div>
@@ -424,8 +450,8 @@ export function App() {
 
         {mobileNavOpen && (
           <div className="fixed inset-0 z-40 lg:hidden">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
-            <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[82%] flex-col border-r border-nexus-border bg-[#0B0B0F] p-5 shadow-2xl">
+            <div className="app-overlay absolute inset-0 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
+            <aside className="app-sidebar absolute inset-y-0 left-0 flex w-72 max-w-[82%] flex-col border-r border-nexus-border p-5 shadow-2xl">
               <div className="mb-8 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <img className="size-10 rounded-lg shadow-red" src="/logo.png" alt="Логотип NexusRM" />
@@ -439,8 +465,8 @@ export function App() {
                 </GhostButton>
               </div>
               <NavLinks items={visibleNav} page={page} onNavigate={switchPage} />
-              <div className="mt-auto rounded-md border border-nexus-border bg-white/[0.03] px-3 py-3 text-xs">
-                <div className="font-bold text-white">{session.user.name}</div>
+              <div className="app-soft-surface mt-auto rounded-md border border-nexus-border px-3 py-3 text-xs">
+                <div className="font-bold text-slate-950">{session.user.name}</div>
                 <div className="text-nexus-muted">{session.user.role}</div>
               </div>
             </aside>
@@ -448,27 +474,65 @@ export function App() {
         )}
 
         <main className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 border-b border-nexus-border bg-nexus-bg/85 px-4 py-3 backdrop-blur md:px-7 md:py-4">
-            <div className="flex items-center gap-3">
-              <GhostButton className="size-10 shrink-0 px-0 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Открыть меню">
-                <PanelLeft size={18} />
-              </GhostButton>
+          <header className="app-header sticky top-0 z-20 border-b border-nexus-border px-4 py-3 backdrop-blur md:px-7 md:py-4">
+            <div className="space-y-3 lg:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <GhostButton className="size-10 shrink-0 px-0" onClick={() => setMobileNavOpen(true)} aria-label="Открыть меню">
+                    <PanelLeft size={18} />
+                  </GhostButton>
+                  <div className="rounded-full border border-nexus-border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-nexus-muted">
+                    NexusRM
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative shrink-0">
+                    <GhostButton className="size-10 px-0" aria-label="Уведомления" onClick={() => setNotificationsOpen((prev) => !prev)}>
+                      <Bell size={18} />
+                      {renderNotificationBadge(notifications.length)}
+                    </GhostButton>
+                    {notificationsOpen ? (
+                      <NotificationsPanel notifications={notifications} onClose={() => setNotificationsOpen(false)} />
+                    ) : null}
+                  </div>
+                  {createActionLabel ? (
+                    <Button className="size-10 shrink-0 px-0" aria-label={createActionLabel} onClick={() => page === "Задачи" ? setNewTaskOpen(true) : page === "Клиенты" ? setNewClientOpen(true) : setNewDealOpen(true)}>
+                      <Plus size={18} />
+                    </Button>
+                  ) : null}
+                  <GhostButton className="size-10 shrink-0 px-0" onClick={logout} aria-label="Выйти">
+                    <LogOut size={18} />
+                  </GhostButton>
+                </div>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-nexus-muted">Центр управления продажами</div>
+                  <h1 className="truncate pt-1 text-[2rem] font-black leading-none tracking-normal">{page}</h1>
+                </div>
+                <GhostButton className="mt-1 size-10 shrink-0 px-0" onClick={toggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
+                  {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+                </GhostButton>
+              </div>
+            </div>
+
+            <div className="hidden items-center gap-3 lg:flex">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-xs uppercase text-nexus-muted">Центр управления продажами</div>
                 <h1 className="truncate text-xl font-black tracking-normal md:text-3xl">{page}</h1>
               </div>
               <div className="relative hidden min-w-72 xl:block">
-                <Search className="absolute left-3 top-2.5 text-zinc-500" size={18} />
-                <input className="h-10 w-full rounded-md border border-nexus-border bg-white/[0.03] pl-10 pr-3 text-sm outline-none ring-nexus-red/60 placeholder:text-zinc-600 focus:ring-2" placeholder="Поиск клиентов, сделок, задач..." />
+                <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+                <input className="app-input h-10 w-full rounded-md border border-nexus-border pl-10 pr-3 text-sm outline-none ring-nexus-red/60 placeholder:text-slate-400 focus:ring-2" placeholder="Поиск клиентов, сделок, задач..." />
               </div>
-              <div className="relative hidden shrink-0 sm:block">
+              <GhostButton className="h-10 shrink-0 px-3" onClick={toggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
+                {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+                <span className="hidden md:inline">{theme === "dark" ? "Светлая" : "Темная"}</span>
+              </GhostButton>
+              <div className="relative shrink-0">
                 <GhostButton className="size-10 px-0" aria-label="Уведомления" onClick={() => setNotificationsOpen((prev) => !prev)}>
                   <Bell size={18} />
-                  {notifications.length > 0 ? (
-                    <span className="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-nexus-red text-[10px] font-bold text-white">
-                      {notifications.length > 9 ? "9+" : notifications.length}
-                    </span>
-                  ) : null}
+                  {renderNotificationBadge(notifications.length)}
                 </GhostButton>
                 {notificationsOpen ? (
                   <NotificationsPanel notifications={notifications} onClose={() => setNotificationsOpen(false)} />
@@ -488,16 +552,16 @@ export function App() {
 
           <div className="p-4 md:p-7">
             {loading ? <LoadingState /> : null}
-            {crmError ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{crmError}</div> : null}
+            {crmError ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">{crmError}</div> : null}
             {crmLoading && !loading ? <LoadingState /> : null}
-            {!loading && !crmLoading && page === "Дашборд" && <Dashboard kpis={kpis} stats={dashboardStats} />}
+            {!loading && !crmLoading && page === "Дашборд" && <Dashboard kpis={kpis} stats={dashboardStats} theme={theme} />}
             {!loading && page === "Клиенты" && <ClientsPage clients={clientList} onCreateClient={() => setNewClientOpen(true)} onSelect={(client) => { setSelectedClient(client); switchPage("Профиль клиента"); }} />}
             {!loading && page === "Профиль клиента" && (selectedClient ? <ClientProfile client={selectedClient} deals={dealList} onUpdateClient={updateClient} /> : <EmptyState title="Клиент не выбран" detail="Откройте клиента из списка." />)}
             {!loading && page === "Сделки" && <DealsPage deals={dealList} onMoveDeal={moveDeal} onRescue={setRescueDeal} />}
             {!loading && page === "Задачи" && <TasksPage tasks={taskList} onMoveTask={moveTask} onCreateTask={() => setNewTaskOpen(true)} />}
             {!loading && page === "AI Ассистент" && <AiPage stats={dashboardStats} />}
             {!loading && page === "API Документация" && <ApiDocsPage />}
-            {!loading && page === "Настройки" && <SettingsPage session={session} request={authenticatedRequest} />}
+            {!loading && page === "Настройки" && <SettingsPage session={session} request={authenticatedRequest} theme={theme} onToggleTheme={toggleTheme} />}
             {!loading && page === "Админ-панель" && <AdminPage session={session} request={authenticatedRequest} />}
           </div>
         </main>
@@ -526,7 +590,7 @@ function NotificationsPanel({ notifications, onClose }: { notifications: Notific
   return (
     <>
       <div className="fixed inset-0 z-30" onClick={onClose} aria-hidden />
-      <div className="absolute right-0 top-12 z-40 w-80 overflow-hidden rounded-lg border border-nexus-border bg-nexus-bg shadow-xl">
+      <div className="absolute right-0 top-12 z-40 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-nexus-border bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-nexus-border px-4 py-3">
           <span className="text-sm font-semibold">Уведомления</span>
           <GhostButton className="size-7 px-0" onClick={onClose} aria-label="Закрыть">
@@ -560,8 +624,8 @@ function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; 
           key={item.label}
           onClick={() => onNavigate(item.label)}
           className={cn(
-            "flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-zinc-400 transition hover:bg-white/[0.04] hover:text-white",
-            page === item.label && "bg-nexus-red/14 text-white ring-1 ring-nexus-red/35",
+            "flex h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-slate-500 transition hover:bg-slate-50 hover:text-nexus-red",
+            page === item.label && "bg-nexus-red/14 text-slate-950 ring-1 ring-nexus-red/35",
           )}
         >
           <item.icon size={18} />
@@ -572,7 +636,17 @@ function NavLinks({ items, page, onNavigate }: { items: typeof nav; page: Page; 
   );
 }
 
-function LoginScreen({ onLogin, notice }: { onLogin: (email: string, password: string) => Promise<void>; notice?: string }) {
+function LoginScreen({
+  onLogin,
+  notice,
+  theme,
+  onToggleTheme,
+}: {
+  onLogin: (email: string, password: string) => Promise<void>;
+  notice?: string;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
+}) {
   const [email, setEmail] = useState("admin@nexusrm.ai");
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
@@ -596,21 +670,26 @@ function LoginScreen({ onLogin, notice }: { onLogin: (email: string, password: s
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_20%_10%,rgba(255,45,45,0.22),transparent_30%),linear-gradient(135deg,#050505,#0B0B0F)] p-5 text-white">
+    <div className="app-auth-screen grid min-h-screen place-items-center p-4 text-slate-950 sm:p-5">
       <Card className="w-full max-w-md p-7">
-        <div className="mb-7 flex items-center gap-3">
-          <img className="size-12 rounded-lg" src="/logo.png" alt="Логотип NexusRM" />
-          <div>
-            <h1 className="text-2xl font-black">NexusRM</h1>
-            <p className="text-sm text-nexus-muted">Защищенный центр управления CRM</p>
+        <div className="mb-7 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <img className="size-12 rounded-lg" src="/logo.png" alt="Логотип NexusRM" />
+            <div>
+              <h1 className="text-2xl font-black">NexusRM</h1>
+              <p className="text-sm text-nexus-muted">Защищенный центр управления CRM</p>
+            </div>
           </div>
+          <GhostButton className="h-9 px-3" onClick={onToggleTheme} aria-label={theme === "dark" ? "Включить светлую тему" : "Включить темную тему"}>
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </GhostButton>
         </div>
-        <label className="mb-2 block text-sm text-zinc-300">Email</label>
-        <input value={email} onChange={(event) => setEmail(event.target.value)} className="mb-4 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
-        <label className="mb-2 block text-sm text-zinc-300">Пароль</label>
-        <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" className="mb-5 h-11 w-full rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
-        {notice ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{notice}</div> : null}
-        {error ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
+        <label className="mb-2 block text-sm text-slate-700">Email</label>
+        <input value={email} onChange={(event) => setEmail(event.target.value)} className="app-input mb-4 h-11 w-full rounded-md border border-nexus-border px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
+        <label className="mb-2 block text-sm text-slate-700">Пароль</label>
+        <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" className="app-input mb-5 h-11 w-full rounded-md border border-nexus-border px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60" />
+        {notice ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">{notice}</div> : null}
+        {error ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700">{error}</div> : null}
         <Button className="w-full" onClick={() => void submit()} disabled={loading}>
           <Lock size={18} />
           {loading ? "Проверяем доступ..." : "Войти в рабочее пространство"}
@@ -625,7 +704,15 @@ function LoginScreen({ onLogin, notice }: { onLogin: (email: string, password: s
   );
 }
 
-function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delta: string; icon: typeof Users }[]; stats: DashboardStats }) {
+function Dashboard({
+  kpis,
+  stats,
+  theme,
+}: {
+  kpis: { label: string; value: string; delta: string; icon: typeof Users }[];
+  stats: DashboardStats;
+  theme: ThemeMode;
+}) {
   const stageBreakdown = stages.map((stage) => ({
     stage,
     count: stats.deals.filter((deal) => deal.stage === stage).length,
@@ -653,17 +740,17 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,45,45,0.16),transparent_36%),radial-gradient(circle_at_85%_18%,rgba(255,255,255,0.08),transparent_24%)]" />
           <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-nexus-red/30 bg-nexus-red/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-red-100">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-nexus-red/30 bg-nexus-red/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-red-700">
                 <Sparkles size={14} />
                 AI sales cockpit
               </div>
               <h2 className="text-2xl font-black leading-tight sm:text-3xl">Фокус на выручку, риски и действия</h2>
-              <p className="mt-2 text-sm leading-6 text-zinc-400">
+              <p className="mt-2 text-sm leading-6 text-slate-500">
                 Взвешенный прогноз {money(weightedForecast)} покрывает {forecastCoverage}% активной воронки.
                 {stats.atRiskClients.length ? ` Внимание на ${stats.atRiskClients[0].name}.` : " Критичных клиентов сейчас нет."}
               </p>
             </div>
-            <div className="grid min-w-[260px] grid-cols-2 gap-3">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:min-w-[260px] sm:grid-cols-2">
               <MetricTile label="Pipeline" value={money(stats.totalPipeline)} detail={`${activeDealsCount} активных сделок`} />
               <MetricTile label="Forecast" value={money(weightedForecast)} detail="с учетом вероятности" tone="red" />
             </div>
@@ -690,17 +777,17 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
         {kpis.map((kpi) => (
           <Card
             key={kpi.label}
-            className="group relative overflow-hidden p-4 transition duration-300 hover:-translate-y-0.5 hover:border-white/15 hover:bg-white/[0.045]"
+            className="group relative overflow-hidden p-4 transition duration-300 hover:-translate-y-0.5 hover:border-nexus-red/30 hover:bg-white"
           >
             <div className="relative">
               <div className="mb-4 flex items-center justify-between">
                 <div className="text-xs font-medium uppercase tracking-wide text-nexus-muted">{kpi.label}</div>
-                <span className="relative flex size-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-red-200 transition group-hover:border-nexus-red/40 group-hover:text-nexus-red">
+                <span className="relative flex size-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-red-600 transition group-hover:border-nexus-red/40 group-hover:text-nexus-red">
                   <kpi.icon size={18} />
                 </span>
               </div>
               <div className="text-3xl font-black leading-none tracking-tight">{kpi.value}</div>
-              <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-red-200">
+              <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-red-600">
                 <span className="size-1.5 rounded-full bg-nexus-red" />
                 {kpi.delta}
               </div>
@@ -723,7 +810,7 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
             </div>
             <Badge tone="red">Взвешенный прогноз</Badge>
           </div>
-          <RevenueChart data={revenueSeries} />
+          <RevenueChart data={revenueSeries} theme={theme} />
         </Card>
 
         <Card className="p-5">
@@ -733,7 +820,7 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
           </div>
           <div className="space-y-3">
             {activities.map((activity) => (
-              <div key={activity} className="flex gap-3 rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm leading-5 text-zinc-300 transition hover:border-white/15 hover:bg-white/[0.045]">
+              <div key={activity} className="flex gap-3 rounded-md border border-nexus-border bg-slate-50/80 p-3 text-sm leading-5 text-slate-700 transition hover:border-nexus-red/30 hover:bg-white">
                 <span className="mt-1 size-2 shrink-0 rounded-full bg-nexus-red" />
                 {activity}
               </div>
@@ -754,19 +841,19 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
               return stageBreakdown.map((item) => (
                 <div
                   key={item.stage}
-                  className="group rounded-md border border-nexus-border bg-white/[0.025] p-3 transition hover:border-nexus-red/40 hover:bg-white/[0.045]"
+                  className="group rounded-md border border-nexus-border bg-slate-50/80 p-3 transition hover:border-nexus-red/40 hover:bg-white"
                 >
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span className="font-bold">{item.stage}</span>
                     <span className="text-nexus-muted">{item.count}</span>
                   </div>
-                  <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-zinc-800/80">
+                  <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-red-200 to-nexus-red transition-all"
                       style={{ width: `${Math.max(6, (item.amount / maxStageAmount) * 100)}%` }}
                     />
                   </div>
-                  <div className="text-sm font-medium text-red-100">{money(item.amount)}</div>
+                  <div className="text-sm font-medium text-red-700">{money(item.amount)}</div>
                 </div>
               ));
             })()}
@@ -781,7 +868,7 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
             {taskBreakdown.map((item) => (
               <div
                 key={item.status}
-                className="flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm transition hover:border-nexus-red/40 hover:bg-white/[0.045]"
+                className="flex items-center justify-between rounded-md border border-nexus-border bg-slate-50/80 p-3 text-sm transition hover:border-nexus-red/40 hover:bg-white"
               >
                 <span className="flex items-center gap-2">
                   <span className="size-1.5 rounded-full bg-nexus-red" />
@@ -797,69 +884,89 @@ function Dashboard({ kpis, stats }: { kpis: { label: string; value: string; delt
             <TrendingUp className="text-nexus-red" size={18} />
             <h2 className="text-lg font-bold">Воронка конверсии</h2>
           </div>
-          <FunnelBars data={conversionSeries} />
+          <FunnelBars data={conversionSeries} theme={theme} />
         </Card>
       </section>
     </div>
   );
 }
 
-function RevenueChartTooltip({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string }) {
+function RevenueChartTooltip({
+  active,
+  payload,
+  label,
+  theme,
+}: {
+  active?: boolean;
+  payload?: { name: string; value: number; color: string }[];
+  label?: string;
+  theme: ThemeMode;
+}) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border border-nexus-border bg-nexus-bg/95 px-3 py-2 text-xs shadow-xl backdrop-blur">
-      <div className="mb-1 font-bold text-white">{label}</div>
+    <div
+      className="rounded-md border border-nexus-border px-3 py-2 text-xs shadow-xl backdrop-blur"
+      style={{
+        background: theme === "dark" ? "rgba(17,17,22,0.95)" : "rgba(255,255,255,0.95)",
+      }}
+    >
+      <div className="mb-1 font-bold text-slate-950">{label}</div>
       {payload.filter((row) => typeof row.value === "number").map((row) => (
         <div key={row.name} className="flex items-center gap-2">
           <span className="size-2 rounded-full" style={{ background: row.color }} />
           <span className="text-nexus-muted">{row.name}:</span>
-          <span className="font-semibold text-white">{money(Math.round(row.value))}</span>
+          <span className="font-semibold text-slate-950">{money(Math.round(row.value))}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function RevenueChart({ data }: { data: RevenueSeriesPoint[] }) {
+function RevenueChart({ data, theme }: { data: RevenueSeriesPoint[]; theme: ThemeMode }) {
+  const axisColor = theme === "dark" ? "#71717A" : "#71717A";
+  const gridColor = theme === "dark" ? "#2A2A32" : "#E5E7EB";
+  const forecastStroke = theme === "dark" ? "#A1A1AA" : "#6B7280";
+  const dotFill = theme === "dark" ? "#111116" : "#FFFFFF";
+
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 12, right: 12, bottom: 4, left: 4 }}>
           <defs>
-            <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#FF2D2D" stopOpacity={0.85} />
-              <stop offset="100%" stopColor="#FF2D2D" stopOpacity={0.25} />
+            <linearGradient id="pipelineFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#FF3B3B" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#A70E16" stopOpacity={0.7} />
             </linearGradient>
             <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#A1A1AA" stopOpacity={0.25} />
+              <stop offset="0%" stopColor="#A1A1AA" stopOpacity={theme === "dark" ? 0.22 : 0.16} />
               <stop offset="100%" stopColor="#A1A1AA" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#2A2A32" vertical={false} />
-          <XAxis dataKey="month" stroke="#71717A" tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#2A2A32" }} />
-          <YAxis stroke="#71717A" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={64} tickFormatter={(value: number) => money(value)} />
-          <Tooltip content={<RevenueChartTooltip />} cursor={{ fill: "rgba(255,45,45,0.06)" }} />
-          <Area type="monotone" dataKey="forecast" name="AI-прогноз" stroke="#A1A1AA" strokeWidth={2} strokeDasharray="6 6" fill="url(#forecastFill)" connectNulls dot={{ r: 3, fill: "#0B0B0F", stroke: "#A1A1AA", strokeWidth: 2 }} />
-          <Bar dataKey="revenue" name="Выручка" fill="url(#revFill)" radius={[6, 6, 0, 0]} barSize={28} />
-          <Line type="monotone" dataKey="revenue" name="Тренд выручки" stroke="#FF2D2D" strokeWidth={3} dot={{ r: 4, fill: "#0B0B0F", stroke: "#FF2D2D", strokeWidth: 3 }} connectNulls legendType="none" />
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+          <XAxis dataKey="month" stroke={axisColor} tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: gridColor }} />
+          <YAxis stroke={axisColor} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={72} tickFormatter={(value: number) => money(value)} />
+          <Tooltip content={<RevenueChartTooltip theme={theme} />} cursor={{ fill: "rgba(255,45,45,0.06)" }} />
+          <Area type="monotone" dataKey="forecast" name="Взвешенный прогноз" stroke={forecastStroke} strokeWidth={2.5} strokeDasharray="6 6" fill="url(#forecastFill)" connectNulls dot={{ r: 3, fill: dotFill, stroke: forecastStroke, strokeWidth: 2 }} />
+          <Line type="monotone" dataKey="forecast" name="Линия прогноза" stroke={forecastStroke} strokeWidth={2.5} strokeDasharray="6 6" dot={{ r: 4, fill: dotFill, stroke: forecastStroke, strokeWidth: 2 }} connectNulls legendType="none" />
+          <Bar dataKey="revenue" name="Pipeline месяца" fill="url(#pipelineFill)" radius={[8, 8, 0, 0]} barSize={36} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-function FunnelBars({ data }: { data: { stage: DealStage; value: number }[] }) {
+function FunnelBars({ data, theme }: { data: { stage: DealStage; value: number }[]; theme: ThemeMode }) {
   const maxValue = Math.max(1, ...data.map((item) => item.value));
 
   return (
     <div className="space-y-3">
       {data.map((item) => (
-        <div key={item.stage} className="group rounded-md border border-nexus-border bg-white/[0.025] p-3 transition hover:border-nexus-red/40 hover:bg-white/[0.045]">
+        <div key={item.stage} className="group rounded-md border border-nexus-border bg-slate-50/80 p-3 transition hover:border-nexus-red/40 hover:bg-white">
           <div className="mb-2 flex items-center justify-between gap-3 text-sm">
             <span className="font-bold">{item.stage}</span>
             <Badge>{item.value}</Badge>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-zinc-800/80">
+          <div className={cn("h-2 overflow-hidden rounded-full", theme === "dark" ? "bg-white/[0.06]" : "bg-slate-100")}>
             <div
               className="h-full rounded-full bg-gradient-to-r from-nexus-accent to-nexus-red shadow-[0_0_10px_rgba(255,45,45,0.5)] transition-all"
               style={{ width: `${Math.max(8, (item.value / maxValue) * 100)}%` }}
@@ -873,7 +980,7 @@ function FunnelBars({ data }: { data: { stage: DealStage; value: number }[] }) {
 
 function MetricTile({ label, value, detail, tone = "default" }: { label: string; value: string; detail: string; tone?: "default" | "red" | "green" | "amber" }) {
   const tones = {
-    default: "border-nexus-border bg-white/[0.025]",
+    default: "border-nexus-border bg-slate-50/80",
     red: "border-red-500/30 bg-red-500/10",
     green: "border-emerald-500/25 bg-emerald-500/10",
     amber: "border-amber-500/25 bg-amber-500/10",
@@ -885,12 +992,12 @@ function MetricTile({ label, value, detail, tone = "default" }: { label: string;
     amber: "bg-amber-400",
   };
   return (
-    <div className={cn("relative overflow-hidden rounded-md border p-3 transition hover:-translate-y-0.5 hover:border-white/15", tones[tone])}>
+    <div className={cn("relative overflow-hidden rounded-md border p-3 transition hover:-translate-y-0.5 hover:border-nexus-red/30", tones[tone])}>
       <span className={cn("absolute inset-y-0 left-0 w-1 rounded-l-md", accents[tone])} />
       <div className="pl-1.5">
         <div className="text-xs uppercase tracking-wide text-nexus-muted">{label}</div>
         <div className="mt-1 text-xl font-black">{value}</div>
-        <div className="mt-1 text-xs text-zinc-400">{detail}</div>
+        <div className="mt-1 text-xs text-slate-500">{detail}</div>
       </div>
     </div>
   );
@@ -917,7 +1024,7 @@ function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur sm:p-4" onClick={onClose}>
       <Card className="w-full max-w-lg p-6" onClick={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold">Новый клиент</h2>
@@ -933,7 +1040,7 @@ function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
           <Field label="Теги через запятую">
             <input className={inputClass} value={tags} onChange={(event) => setTags(event.target.value)} placeholder="enterprise, cloud" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Менеджер">
               <input className={inputClass} value={manager} onChange={(event) => setManager(event.target.value)} placeholder="Администратор Nexus" />
             </Field>
@@ -946,7 +1053,7 @@ function NewClientModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
               </select>
             </Field>
           </div>
-          {error && <p className="text-sm text-red-300">{error}</p>}
+          {error && <p className="text-sm text-red-700">{error}</p>}
           <Button className="w-full" onClick={submit}><Plus size={18} />Создать клиента</Button>
         </div>
       </Card>
@@ -972,8 +1079,8 @@ function ClientsPage({ clients, onCreateClient, onSelect }: { clients: CrmClient
               <Badge tone={client.status === "at_risk" ? "red" : client.status === "active" ? "green" : "default"}>{clientStatusLabels[client.status]}</Badge>
             </div>
             <div className="mb-4 flex flex-wrap gap-2">{client.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div>
-            <div className="mb-4 text-sm text-zinc-300">Менеджер: {client.manager}</div>
-            <div className="mb-5 h-2 rounded-full bg-white/[0.06]">
+            <div className="mb-4 text-sm text-slate-700">Менеджер: {client.manager}</div>
+            <div className="mb-5 h-2 rounded-full bg-slate-100">
               <div className="h-2 rounded-full bg-nexus-red" style={{ width: `${client.healthScore}%` }} />
             </div>
             <GhostButton className="w-full" onClick={() => onSelect(client)}>
@@ -1063,12 +1170,12 @@ function ClientProfile({ client, deals, onUpdateClient }: { client: CrmClient; d
             <Field label="Теги через запятую">
               <input className={inputClass} value={draft.tags.join(", ")} onChange={(event) => setDraft((item) => ({ ...item, tags: event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean) }))} />
             </Field>
-            {error ? <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
+            {error ? <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700">{error}</div> : null}
           </div>
         ) : (
           <>
             <div className="mt-5 flex flex-wrap gap-2">{client.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</div>
-            <div className="mt-6 space-y-3 text-sm text-zinc-300">
+            <div className="mt-6 space-y-3 text-sm text-slate-700">
               <p>Статус: {clientStatusLabels[client.status]}</p>
               <p>Ответственный менеджер: {client.manager}</p>
               <p>Контакты: {client.contacts.length ? client.contacts.join(", ") : "Контакты пока не добавлены"}</p>
@@ -1077,7 +1184,7 @@ function ClientProfile({ client, deals, onUpdateClient }: { client: CrmClient; d
           </>
         )}
         <Card className="mt-6 border-red-500/25 bg-red-500/8 p-4">
-          <div className="mb-2 text-sm font-bold text-red-100">AI health score клиента</div>
+          <div className="mb-2 text-sm font-bold text-red-700">AI health score клиента</div>
           <div className="text-4xl font-black">{editing ? draft.healthScore : client.healthScore}%</div>
           <p className="mt-2 text-sm text-nexus-muted">{client.notes}</p>
         </Card>
@@ -1098,7 +1205,7 @@ function DealsPage({ deals: dealsProp, onMoveDeal, onRescue }: { deals: CrmDeal[
   return (
     <div className="space-y-5">
       <p className="text-sm text-nexus-muted">Перетащите сделку между стадиями или создайте новую через кнопку вверху.</p>
-      <div className="grid min-w-0 gap-4 xl:grid-cols-6">
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
       {stages.map((stage) => {
         const stageDeals = dealsProp.filter((deal) => deal.stage === stage);
         return (
@@ -1147,7 +1254,7 @@ function DealCard({ deal, onRescue }: { deal: CrmDeal; onRescue: (deal: CrmDeal)
   const atRisk = deal.risk === "high" || (deal.risk === "medium" && deal.probability < 50);
   const canRescue = atRisk && isActiveDeal(deal);
   return (
-    <div className="rounded-md border border-nexus-border bg-black/30 p-3">
+    <div className="rounded-md border border-nexus-border bg-white p-3">
       <div className="mb-2 text-sm font-bold">{deal.title}</div>
       <div className="mb-3 text-xs text-nexus-muted">{deal.client}</div>
       <div className="flex items-center justify-between text-xs">
@@ -1157,7 +1264,7 @@ function DealCard({ deal, onRescue }: { deal: CrmDeal; onRescue: (deal: CrmDeal)
       {canRescue && (
         <button
           onClick={() => onRescue(deal)}
-          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-nexus-red/40 bg-nexus-red/12 px-2 py-1.5 text-xs font-semibold text-red-100 transition hover:bg-nexus-red/20"
+          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-nexus-red/40 bg-nexus-red/12 px-2 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-nexus-red/20"
         >
           <LifeBuoy size={14} />
           AI Rescue
@@ -1232,7 +1339,7 @@ function DealRescueModal({
   const riskTone = plan?.riskLevel === "high" ? "red" : plan?.riskLevel === "low" ? "green" : "amber";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur sm:p-4" onClick={onClose}>
       <Card className="max-h-[90vh] w-full max-w-xl overflow-y-auto p-6" onClick={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -1258,7 +1365,7 @@ function DealRescueModal({
         )}
 
         {error && !loading ? (
-          <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{error}</div>
+          <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">{error}</div>
         ) : null}
 
         {plan && !loading && (
@@ -1269,7 +1376,7 @@ function DealRescueModal({
               <Badge>Без активности: {plan.daysSinceActivity} дн.</Badge>
             </div>
 
-            <div className="rounded-md border border-nexus-border bg-black/20 p-3">
+            <div className="rounded-md border border-nexus-border bg-slate-50 p-3">
               <div className="mb-1 text-xs font-bold uppercase text-nexus-muted">Причина риска</div>
               <p className="text-sm">{plan.riskReason}</p>
             </div>
@@ -1279,7 +1386,7 @@ function DealRescueModal({
               <ol className="space-y-1.5">
                 {plan.nextSteps.map((step, index) => (
                   <li key={index} className="flex gap-2 text-sm">
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-nexus-red/15 text-xs font-bold text-red-100">{index + 1}</span>
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-nexus-red/15 text-xs font-bold text-red-700">{index + 1}</span>
                     <span>{step}</span>
                   </li>
                 ))}
@@ -1291,9 +1398,9 @@ function DealRescueModal({
                 <div className="text-xs font-bold uppercase text-nexus-muted">Черновик письма</div>
                 <span className="text-[10px] text-nexus-muted">{plan.emailModel}</span>
               </div>
-              <div className="rounded-md border border-nexus-border bg-black/20 p-3">
+              <div className="rounded-md border border-nexus-border bg-slate-50 p-3">
                 <div className="mb-1 text-sm font-semibold">{plan.emailSubject}</div>
-                <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-300">{plan.emailDraft}</pre>
+                <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700">{plan.emailDraft}</pre>
               </div>
             </div>
 
@@ -1344,7 +1451,7 @@ function NewDealModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur sm:p-4" onClick={onClose}>
       <Card className="w-full max-w-lg p-6" onClick={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold">Новая сделка</h2>
@@ -1360,7 +1467,7 @@ function NewDealModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
               {clients.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Стадия">
               <select className={inputClass} value={stage} onChange={(event) => setStage(event.target.value as DealStage)}>
                 {stages.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -1370,7 +1477,7 @@ function NewDealModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
               <input className={inputClass} type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="42000" />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Дата закрытия">
               <input className={inputClass} type="date" value={closeDate} onChange={(event) => setCloseDate(event.target.value)} />
             </Field>
@@ -1378,7 +1485,7 @@ function NewDealModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
               <input className={inputClass} type="number" min="0" max="100" value={probability} onChange={(event) => setProbability(event.target.value)} />
             </Field>
           </div>
-          {error && <p className="text-sm text-red-300">{error}</p>}
+          {error && <p className="text-sm text-red-700">{error}</p>}
           <Button className="w-full" onClick={submit}><Plus size={18} />Создать сделку</Button>
         </div>
       </Card>
@@ -1402,7 +1509,7 @@ function NewTaskModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur sm:p-4" onClick={onClose}>
       <Card className="w-full max-w-lg p-6" onClick={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold">Новая задача</h2>
@@ -1418,7 +1525,7 @@ function NewTaskModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
               {clients.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Срок">
               <input className={inputClass} value={due} onChange={(event) => setDue(event.target.value)} placeholder="Сегодня" />
             </Field>
@@ -1431,7 +1538,7 @@ function NewTaskModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
               </select>
             </Field>
           </div>
-          {error && <p className="text-sm text-red-300">{error}</p>}
+          {error && <p className="text-sm text-red-700">{error}</p>}
           <Button className="w-full" onClick={submit}><Plus size={18} />Создать задачу</Button>
         </div>
       </Card>
@@ -1439,7 +1546,7 @@ function NewTaskModal({ clients, onClose, onCreate }: { clients: CrmClient[]; on
   );
 }
 
-const inputClass = "h-10 w-full rounded-md border border-nexus-border bg-white/[0.03] px-3 text-sm outline-none ring-nexus-red/60 placeholder:text-zinc-600 focus:ring-2";
+const inputClass = "app-input h-10 w-full rounded-md border border-nexus-border px-3 text-sm outline-none ring-nexus-red/60 placeholder:text-slate-400 focus:ring-2";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -1452,14 +1559,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function DealRow({ deal }: { deal: CrmDeal }) {
   return (
-    <div className="flex items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-4">
+    <div className="flex items-center justify-between rounded-md border border-nexus-border bg-slate-50/80 p-4">
       <div>
         <div className="font-bold">{deal.title}</div>
         <div className="text-sm text-nexus-muted">{deal.stage} · закрытие {deal.closeDate}</div>
       </div>
       <div className="text-right">
         <div className="font-bold">{money(deal.amount)}</div>
-        <div className="text-sm text-red-200">AI {deal.aiScore}</div>
+        <div className="text-sm text-red-600">AI {deal.aiScore}</div>
       </div>
     </div>
   );
@@ -1505,7 +1612,7 @@ function TasksPage({ tasks, onMoveTask, onCreateTask }: { tasks: CrmTask[]; onMo
                     }}
                     onDragEnd={() => setDraggingTaskId("")}
                     className={cn(
-                      "cursor-grab rounded-md border border-nexus-border bg-white/[0.025] p-4 transition active:cursor-grabbing",
+                      "cursor-grab rounded-md border border-nexus-border bg-slate-50/80 p-4 transition active:cursor-grabbing",
                       draggingTaskId === task.id && "scale-[0.99] border-red-500/60 opacity-70",
                     )}
                   >
@@ -1585,7 +1692,7 @@ function AiPage({ stats }: { stats: DashboardStats }) {
       <Card className="p-6">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-bold text-red-100">
+            <div className="mb-2 flex items-center gap-2 text-sm font-bold text-red-700">
               <Bot className="text-nexus-red" size={20} />
               Nexus AI Copilot
             </div>
@@ -1601,7 +1708,7 @@ function AiPage({ stats }: { stats: DashboardStats }) {
         </div>
         <div className="mt-5 space-y-2">
           {promptChips.map((prompt) => (
-            <button key={prompt} onClick={() => usePrompt(prompt)} className="w-full rounded-md border border-nexus-border bg-white/[0.025] px-3 py-2 text-left text-sm text-zinc-300 transition hover:border-nexus-red/60 hover:text-white">
+            <button key={prompt} onClick={() => usePrompt(prompt)} className="w-full rounded-md border border-nexus-border bg-slate-50/80 px-3 py-2 text-left text-sm text-slate-700 transition hover:border-nexus-red/60 hover:text-nexus-red">
               {prompt}
             </button>
           ))}
@@ -1618,20 +1725,20 @@ function AiPage({ stats }: { stats: DashboardStats }) {
             Очистить
           </GhostButton>
         </div>
-        <div className="mb-4 max-h-[520px] min-h-[360px] space-y-3 overflow-y-auto rounded-md border border-nexus-border bg-black/25 p-3">
+        <div className="mb-4 max-h-[520px] min-h-[360px] space-y-3 overflow-y-auto rounded-md border border-nexus-border bg-slate-50 p-3">
           {chat.map((item, index) => (
             <div
               key={`${item.role}-${index}`}
               className={cn(
                 "rounded-md border p-4 text-sm leading-6 shadow-sm",
-                item.role === "user" ? "ml-4 border-zinc-700 bg-white/[0.04] sm:ml-8" : "mr-4 border-red-500/20 bg-red-500/8 sm:mr-8",
+                item.role === "user" ? "ml-4 border-slate-200 bg-slate-50 sm:ml-8" : "mr-4 border-red-500/20 bg-red-500/8 sm:mr-8",
               )}
             >
               <div className="mb-1 text-xs font-bold uppercase text-nexus-muted">{item.role === "user" ? "Вы" : "Nexus AI"}</div>
               <ChatMessage text={item.text} />
             </div>
           ))}
-          {loading ? <div className="rounded-md border border-nexus-border bg-white/[0.025] p-4 text-sm text-nexus-muted">AI анализирует CRM-контекст...</div> : null}
+          {loading ? <div className="rounded-md border border-nexus-border bg-slate-50/80 p-4 text-sm text-nexus-muted">AI анализирует CRM-контекст...</div> : null}
         </div>
         <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
           <input
@@ -1640,7 +1747,7 @@ function AiPage({ stats }: { stats: DashboardStats }) {
             onKeyDown={(event) => {
               if (event.key === "Enter") void sendMessage();
             }}
-            className="h-11 min-w-0 flex-1 rounded-md border border-nexus-border bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60"
+            className="h-11 min-w-0 flex-1 rounded-md border border-nexus-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-nexus-red/60"
             placeholder="Спросите про клиентов, сделки или риски..."
           />
           <Button className="px-5" onClick={() => void sendMessage()} disabled={loading}>
@@ -1687,10 +1794,10 @@ function ChatMessage({ text }: { text: string }) {
 function renderInline(text: string) {
   return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index} className="font-bold text-white">{part.slice(2, -2)}</strong>;
+      return <strong key={index} className="font-bold text-slate-950">{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith("`") && part.endsWith("`")) {
-      return <code key={index} className="rounded bg-black/40 px-1 py-0.5 text-xs text-red-100">{part.slice(1, -1)}</code>;
+      return <code key={index} className="rounded bg-white px-1 py-0.5 text-xs text-red-700">{part.slice(1, -1)}</code>;
     }
     return part;
   });
@@ -1749,8 +1856,8 @@ function ApiDocsPage() {
         <h3 className="mb-4 text-lg font-bold">Рабочие endpoints</h3>
         <div className="grid gap-3 md:grid-cols-2">
           {endpoints.map(([method, path, description]) => (
-            <div key={path} className="rounded-md border border-nexus-border bg-black/35 p-4">
-              <div className="font-mono text-sm text-red-100">{method} {path}</div>
+            <div key={path} className="rounded-md border border-nexus-border bg-white p-4">
+              <div className="font-mono text-sm text-red-700">{method} {path}</div>
               <div className="mt-2 text-sm text-nexus-muted">{description}</div>
             </div>
           ))}
@@ -1759,7 +1866,7 @@ function ApiDocsPage() {
 
       <Card className="p-6">
         <h3 className="mb-3 text-lg font-bold">Пример входа и вызова защищенного API</h3>
-        <pre className="overflow-x-auto rounded-md border border-nexus-border bg-black/50 p-4 text-xs text-red-100">{`curl -X POST ${apiBase}/api/auth/login \\
+        <pre className="overflow-x-auto rounded-md border border-nexus-border bg-slate-50 p-4 text-xs text-slate-800">{`curl -X POST ${apiBase}/api/auth/login \\
   -H "Content-Type: application/json" \\
   -d '{"email":"admin@nexusrm.ai","password":"admin123"}'
 
@@ -1772,7 +1879,7 @@ curl ${apiBase}/api/admin/overview \\
         <p className="text-sm leading-6 text-nexus-muted">
           Это означает, что Cloudflare видит домен, но origin/backend не отвечает. Повторите серверную команду установки после последнего обновления репозитория и проверьте логи backend/Caddy.
         </p>
-        <pre className="mt-4 overflow-x-auto rounded-md border border-nexus-border bg-black/50 p-4 text-xs text-red-100">{`cd /opt/nexusrm
+        <pre className="mt-4 overflow-x-auto rounded-md border border-nexus-border bg-slate-50 p-4 text-xs text-slate-800">{`cd /opt/nexusrm
 docker compose -f docker-compose.prod.yml --env-file .env ps
 docker compose -f docker-compose.prod.yml --env-file .env logs -f backend caddy`}</pre>
       </Card>
@@ -1831,7 +1938,17 @@ const emptyUserForm: UserForm = {
   phone: "",
 };
 
-function SettingsPage({ session, request }: { session: Session; request: AuthedRequest }) {
+function SettingsPage({
+  session,
+  request,
+  theme,
+  onToggleTheme,
+}: {
+  session: Session;
+  request: AuthedRequest;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
+}) {
   const [settings, setSettings] = useState<WorkspaceSettings>(defaultWorkspaceSettings);
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState<keyof WorkspaceSettings | "">("");
@@ -1884,43 +2001,43 @@ function SettingsPage({ session, request }: { session: Session; request: AuthedR
     <div className="grid gap-5 lg:grid-cols-2">
       <Card className="p-6">
         <h2 className="mb-4 text-xl font-black">Настройки пространства</h2>
-        {error ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{error}</div> : null}
-        {!canEdit ? <div className="mb-4 rounded-md border border-nexus-border bg-white/[0.025] p-3 text-sm text-nexus-muted">Изменять системные настройки может только администратор.</div> : null}
-        <Toggle label="Темная тема по умолчанию" enabled disabled />
+        {error ? <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">{error}</div> : null}
+        {!canEdit ? <div className="mb-4 rounded-md border border-nexus-border bg-slate-50/80 p-3 text-sm text-nexus-muted">Изменять системные настройки может только администратор.</div> : null}
+        <Toggle label={theme === "dark" ? "Темная тема" : "Светлая тема"} enabled={theme === "dark"} onToggle={onToggleTheme} />
         <Toggle label="AI уведомления о рисках" enabled={settings.aiEnabled} disabled={!canEdit || busyKey === "aiEnabled"} busy={busyKey === "aiEnabled"} onToggle={() => void updateSetting("aiEnabled", !settings.aiEnabled)} />
         <Toggle label="Доступ к публичному API" enabled={settings.publicApiEnabled} disabled={!canEdit || busyKey === "publicApiEnabled"} busy={busyKey === "publicApiEnabled"} onToggle={() => void updateSetting("publicApiEnabled", !settings.publicApiEnabled)} />
         <Toggle label="Самостоятельная регистрация" enabled={settings.registrationEnabled} disabled={!canEdit || busyKey === "registrationEnabled"} busy={busyKey === "registrationEnabled"} onToggle={() => void updateSetting("registrationEnabled", !settings.registrationEnabled)} />
         {canEdit ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm text-zinc-300">
+            <label className="text-sm text-slate-700">
               Workspace
               <input
                 value={settings.workspaceName}
                 onBlur={() => void updateSetting("workspaceName", settings.workspaceName)}
                 onChange={(event) => setLocalSetting("workspaceName", event.target.value)}
-                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60"
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60"
               />
             </label>
-            <label className="text-sm text-zinc-300">
+            <label className="text-sm text-slate-700">
               Часовой пояс
               <input
                 value={settings.timezone}
                 onBlur={() => void updateSetting("timezone", settings.timezone)}
                 onChange={(event) => setLocalSetting("timezone", event.target.value)}
-                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60"
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60"
               />
             </label>
-            <label className="text-sm text-zinc-300">
+            <label className="text-sm text-slate-700">
               Валюта
-              <select value={settings.currency} onChange={(event) => { const value = event.target.value; setLocalSetting("currency", value); void updateSetting("currency", value); }} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+              <select value={settings.currency} onChange={(event) => { const value = event.target.value; setLocalSetting("currency", value); void updateSetting("currency", value); }} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
                 <option value="RUB">RUB · рубли</option>
                 <option value="USD">USD · доллары</option>
                 <option value="EUR">EUR · евро</option>
               </select>
             </label>
-            <label className="text-sm text-zinc-300">
+            <label className="text-sm text-slate-700">
               Роль по умолчанию
-              <select value={settings.defaultRole} onChange={(event) => { const value = event.target.value as Role; setLocalSetting("defaultRole", value); void updateSetting("defaultRole", value); }} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+              <select value={settings.defaultRole} onChange={(event) => { const value = event.target.value as Role; setLocalSetting("defaultRole", value); void updateSetting("defaultRole", value); }} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
                 <option value="manager">manager</option>
                 <option value="viewer">viewer</option>
                 <option value="admin">admin</option>
@@ -2061,7 +2178,7 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
 
   return (
     <div className="space-y-5">
-      {error ? <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">{error}</div> : null}
+      {error ? <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800">{error}</div> : null}
 
       <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
         {(overview ? Object.entries(overview) : []).map(([label, value]) => (
@@ -2087,17 +2204,17 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
           <TextInput label="Должность" value={userForm.title} onChange={(value) => setUserForm((form) => ({ ...form, title: value }))} />
           <TextInput label="Отдел" value={userForm.department} onChange={(value) => setUserForm((form) => ({ ...form, department: value }))} />
           <TextInput label="Телефон" value={userForm.phone} onChange={(value) => setUserForm((form) => ({ ...form, phone: value }))} />
-          <label className="text-sm text-zinc-300">
+          <label className="text-sm text-slate-700">
             Роль
-            <select value={userForm.role} onChange={(event) => setUserForm((form) => ({ ...form, role: event.target.value as Role }))} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+            <select value={userForm.role} onChange={(event) => setUserForm((form) => ({ ...form, role: event.target.value as Role }))} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
               <option value="admin">admin</option>
               <option value="manager">manager</option>
               <option value="viewer">viewer</option>
             </select>
           </label>
-          <label className="text-sm text-zinc-300">
+          <label className="text-sm text-slate-700">
             Статус
-            <select value={userForm.status} onChange={(event) => setUserForm((form) => ({ ...form, status: event.target.value as UserForm["status"] }))} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
+            <select value={userForm.status} onChange={(event) => setUserForm((form) => ({ ...form, status: event.target.value as UserForm["status"] }))} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60">
               <option value="active">active</option>
               <option value="invited">invited</option>
               <option value="disabled">disabled</option>
@@ -2113,22 +2230,22 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
               {users.map((user) => (
                 <tr key={user.id} className="border-t border-nexus-border">
                   <td className="p-3">
-                    <input value={user.name} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, name: event.target.value } : item))} className="mb-2 h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" />
+                    <input value={user.name} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, name: event.target.value } : item))} className="mb-2 h-9 w-full rounded-md border border-nexus-border bg-white px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" />
                     <div className="text-xs text-nexus-muted">{user.email}</div>
                   </td>
                   <td className="p-3">
-                    <input value={user.title ?? ""} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, title: event.target.value } : item))} className="mb-2 h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" placeholder="Должность" />
-                    <input value={user.department ?? ""} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, department: event.target.value } : item))} className="h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" placeholder="Отдел" />
+                    <input value={user.title ?? ""} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, title: event.target.value } : item))} className="mb-2 h-9 w-full rounded-md border border-nexus-border bg-white px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" placeholder="Должность" />
+                    <input value={user.department ?? ""} onChange={(event) => setUsers((items) => items.map((item) => item.id === user.id ? { ...item, department: event.target.value } : item))} className="h-9 w-full rounded-md border border-nexus-border bg-white px-2 outline-none focus:ring-2 focus:ring-nexus-red/60" placeholder="Отдел" />
                   </td>
                   <td className="p-3">
-                    <select value={user.role} onChange={(event) => void updateUser(user.id, { ...user, role: event.target.value as Role })} className="h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60">
+                    <select value={user.role} onChange={(event) => void updateUser(user.id, { ...user, role: event.target.value as Role })} className="h-9 w-full rounded-md border border-nexus-border bg-white px-2 outline-none focus:ring-2 focus:ring-nexus-red/60">
                       <option value="admin">admin</option>
                       <option value="manager">manager</option>
                       <option value="viewer">viewer</option>
                     </select>
                   </td>
                   <td className="p-3">
-                    <select value={user.status} onChange={(event) => void updateUser(user.id, { ...user, status: event.target.value as AdminUser["status"] })} className="h-9 w-full rounded-md border border-nexus-border bg-black/40 px-2 outline-none focus:ring-2 focus:ring-nexus-red/60">
+                    <select value={user.status} onChange={(event) => void updateUser(user.id, { ...user, status: event.target.value as AdminUser["status"] })} className="h-9 w-full rounded-md border border-nexus-border bg-white px-2 outline-none focus:ring-2 focus:ring-nexus-red/60">
                       <option value="active">active</option>
                       <option value="invited">invited</option>
                       <option value="disabled">disabled</option>
@@ -2151,46 +2268,46 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
         <Card className="p-6">
           <h2 className="mb-4 text-xl font-black">Системные настройки</h2>
           <div className="space-y-3 text-sm">
-            <label className="block text-sm text-zinc-300">
+            <label className="block text-sm text-slate-700">
               Рабочее пространство
               <input
                 value={settings.workspaceName}
                 onBlur={() => void updateSetting("workspaceName", settings.workspaceName)}
                 onChange={(event) => setLocalAdminSetting("workspaceName", event.target.value)}
                 disabled={savingSetting === "workspaceName"}
-                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
               />
             </label>
-            <label className="block text-sm text-zinc-300">
+            <label className="block text-sm text-slate-700">
               Часовой пояс
               <input
                 value={settings.timezone}
                 onBlur={() => void updateSetting("timezone", settings.timezone)}
                 onChange={(event) => setLocalAdminSetting("timezone", event.target.value)}
                 disabled={savingSetting === "timezone"}
-                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
               />
             </label>
-            <label className="block text-sm text-zinc-300">
+            <label className="block text-sm text-slate-700">
               Валюта
               <select
                 value={settings.currency}
                 onChange={(event) => { const value = event.target.value; setLocalAdminSetting("currency", value); void updateSetting("currency", value); }}
                 disabled={savingSetting === "currency"}
-                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
               >
                 <option value="RUB">RUB · рубли</option>
                 <option value="USD">USD · доллары</option>
                 <option value="EUR">EUR · евро</option>
               </select>
             </label>
-            <label className="block text-sm text-zinc-300">
+            <label className="block text-sm text-slate-700">
               Роль по умолчанию
               <select
                 value={settings.defaultRole}
                 onChange={(event) => { const value = event.target.value as Role; setLocalAdminSetting("defaultRole", value); void updateSetting("defaultRole", value); }}
                 disabled={savingSetting === "defaultRole"}
-                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
+                className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60 disabled:opacity-60"
               >
                 <option value="admin">admin</option>
                 <option value="manager">manager</option>
@@ -2208,10 +2325,10 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
             <h2 className="text-xl font-black">API ключи</h2>
             <Button onClick={() => void createKey()}><Plus size={18} />Создать ключ</Button>
           </div>
-          {newKey ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 font-mono text-xs text-red-100">{newKey}</div> : null}
+          {newKey ? <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 font-mono text-xs text-red-700">{newKey}</div> : null}
           <div className="space-y-3">
             {apiKeys.map((key) => (
-              <div key={key.id} className="rounded-md border border-nexus-border bg-black/35 p-3 text-sm">
+              <div key={key.id} className="rounded-md border border-nexus-border bg-white p-3 text-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div><div className="font-bold">{key.name}</div><div className="font-mono text-xs text-nexus-muted">{key.prefix}...</div></div>
                   <button disabled={togglingKeyId === key.id} onClick={() => void toggleKey(key.id)} className="rounded-md border border-nexus-border px-3 py-2 text-xs font-bold transition hover:border-nexus-red/60 disabled:opacity-60">
@@ -2229,7 +2346,7 @@ function AdminPage({ session, request }: { session: Session; request: AuthedRequ
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-nexus-border bg-white/[0.025] p-3">
+    <div className="flex items-center justify-between gap-4 rounded-md border border-nexus-border bg-slate-50/80 p-3">
       <span className="text-nexus-muted">{label}</span>
       <span className="text-right font-medium">{value}</span>
     </div>
@@ -2238,9 +2355,9 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function TextInput({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return (
-    <label className="text-sm text-zinc-300">
+    <label className="text-sm text-slate-700">
       {label}
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-black/40 px-3 outline-none focus:ring-2 focus:ring-nexus-red/60" />
+      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-nexus-border bg-white px-3 outline-none focus:ring-2 focus:ring-nexus-red/60" />
     </label>
   );
 }
@@ -2252,10 +2369,10 @@ function Toggle({ label, enabled, onToggle, disabled, busy }: { label: string; e
       onClick={onToggle}
       disabled={disabled || !onToggle}
       aria-pressed={enabled}
-      className="mb-3 flex w-full items-center justify-between rounded-md border border-nexus-border bg-white/[0.025] p-4 text-left transition hover:border-nexus-red/60 disabled:cursor-not-allowed disabled:opacity-70"
+      className="mb-3 flex w-full items-center justify-between rounded-md border border-nexus-border bg-slate-50/80 p-4 text-left transition hover:border-nexus-red/60 disabled:cursor-not-allowed disabled:opacity-70"
     >
       <span className="text-sm">{label}</span>
-      <span className={cn("h-6 w-11 rounded-full p-1", enabled ? "bg-nexus-red" : "bg-zinc-700")}>
+      <span className={cn("h-6 w-11 rounded-full p-1", enabled ? "bg-nexus-red" : "bg-slate-300")}>
         <span className={cn("block size-4 rounded-full bg-white transition", enabled && "translate-x-5", busy && "opacity-60")} />
       </span>
     </button>
@@ -2264,8 +2381,8 @@ function Toggle({ label, enabled, onToggle, disabled, busy }: { label: string; e
 
 function EmptyState({ title, detail, compact }: { title: string; detail: string; compact?: boolean }) {
   return (
-    <div className={cn("rounded-md border border-dashed border-nexus-border bg-white/[0.02] text-center text-nexus-muted", compact ? "p-3 text-xs" : "p-8")}>
-      <div className="font-bold text-zinc-300">{title}</div>
+    <div className={cn("rounded-md border border-dashed border-nexus-border bg-slate-50/80 text-center text-nexus-muted", compact ? "p-3 text-xs" : "p-8")}>
+      <div className="font-bold text-slate-700">{title}</div>
       <div className="mt-1">{detail}</div>
     </div>
   );
@@ -2280,3 +2397,5 @@ function LoadingState() {
     </div>
   );
 }
+
+
